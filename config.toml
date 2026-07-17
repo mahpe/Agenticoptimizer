@@ -1,0 +1,19 @@
+cif_path = "/home/mahpe/Code/Agenticoptimizer/NaFePO4_olivine_new.cif"
+supercell_size = (1,3,2)
+[swap_params]
+lattice_sites = Na
+atom_swaps = [Na, X]
+ratio = [0.66, 0.34]
+
+[relax_params]
+calc_name="TensorNet-MatPES-PBE-2025.2"
+optimizer="BFGS"
+interval=1
+fmax=0.2
+max_steps=500
+relax_atoms=True
+relax_cell=True
+cell_filter=CellFilter # hydrostrain is by defult false
+fix_symmetry=False
+fix_atoms=False
+symprec=1e-3
