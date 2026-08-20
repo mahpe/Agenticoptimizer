@@ -1,0 +1,23 @@
+# Local config (may contain API keys)
+config.toml
+
+# Environment / secrets
+.env
+!.env.example
+
+# Run outputs
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+*.swp

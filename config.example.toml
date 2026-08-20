@@ -1,0 +1,48 @@
+# Copy to config.toml and edit paths/keys for your machine.
+#cif_path = "/path/to/your.cif"
+cif_path = "/home/mahpe/Code/Agenticoptimizer/cif_files/ICSD_CollCode645012.cif"
+
+[prep_params]
+auto_prepare = true
+max_cell_size = 20
+sublattice_index = 0
+occupancy_tolerance = 2.0
+supercell_size = [2, 2, 2]
+
+[relax_params]
+calc_name = "TensorNet-MatPES-PBE-2025.2"
+optimizer = "BFGS"
+interval = 1
+fmax = 0.2
+max_steps = 1000
+relax_atoms = true
+relax_cell = true
+cell_filter = "FrechetCellFilter"
+fix_symmetry = false
+fix_atoms = false
+symprec = 1.0e-3
+
+[agent_params]
+backend = "openai"
+model = "gpt-4o-mini"
+# Set OPENAI_API_KEY and CURSOR_API_KEY in the environment, or uncomment:
+# api_key = "sk-..."
+# cursor_api_key = "crsr_..."
+# base_url = "http://localhost:11434/v1"
+max_iters = 1000
+max_swaps_per_step = 4
+seed = 0
+skill_path = "Skill.md"
+out_dir = "runs/latest"
+
+[ga_params]
+num_gens = 1000
+pop_size = 200
+random_seed = 0
+out_dir = "runs/ga_latest"
+
+[mc_params]
+num_steps = 1000
+acceptance_rate = 0.3
+seed = 0
+out_dir = "runs/mc_latest"

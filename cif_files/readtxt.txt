@@ -1,0 +1,107 @@
+AuCu CIF files — provenance and citations
+===========================================
+
+This folder contains three CIF files for equiatomic AuCu. Two were built from
+published experimental lattice parameters; one was downloaded as a DFT reference.
+
+
+Files
+-----
+
+1. AuCu_ordered_L10.cif
+   Ordered low-temperature AuCu I phase (L1_0, space group P4/mmm).
+
+2. AuCu_disordered_fcc.cif
+   Disordered high-temperature fcc solid solution (A1, space group Fm-3m).
+
+3. AuCu_ordered_mp522_DFT.cif
+   DFT-relaxed ordered structure from Materials Project (reference only).
+
+
+How the CIFs were obtained
+----------------------------
+
+Ordered (AuCu_ordered_L10.cif)
+  - Target structure: ICSD entry 42574 (CuAu(I), L1_0).
+  - Primary source: Bjerkelund et al., Acta Chem. Scand. 21, 2900–2901 (1967).
+    doi:10.3891/acta.chem.scand.21-2900
+  - Cross-checked against the AFLOW prototype encyclopedia entry AB_tP2_123_a_d-001
+    (https://aflow.org/p/AB_tP2_123_a_d-001/), which explicitly maps this prototype
+    to ICSD 42574 and the Bjerkelund 1967 lattice parameters.
+  - Materials Project mp-522 also lists ICSD 42574 as a related entry, but the MP CIF
+    endpoint returns a primitive P1 cell (a ≈ 2.86 Å), not the experimental
+    conventional tetragonal cell. Therefore the ordered CIF here was written manually
+    from the literature values:
+      a = b = 3.994 Å, c = 3.672 Å (c/a ≈ 0.92)
+      Au at Wyckoff 1a (0, 0, 0)
+      Cu at Wyckoff 1d (1/2, 1/2, 1/2)
+  - Format follows the ICSD-style CIF used elsewhere in this project (e.g. CoFe.cif).
+
+Disordered (AuCu_disordered_fcc.cif)
+  - Target structure: high-T disordered fcc (A1) solid solution above the order–disorder
+    transition (~683 K for equiatomic AuCu).
+  - No single open ICSD/COD download was found for a partially occupied equiatomic
+    AuCu fcc entry. COD searches for "AuCu" returned no matches.
+  - Lattice parameter taken from Okamoto et al., Mater. Trans. 49, 2880–2884 (2008):
+      a = 3.875 nm for the solution heat-treated (disordered fcc) sample.
+    doi:10.2320/matertrans.MER2008410
+  - Atomic arrangement modeled as random 50/50 Au/Cu on the fcc 4a site:
+      Au occupancy 0.5, Cu occupancy 0.5 on (0, 0, 0)
+    This is the standard crystallographic representation for a disordered solid
+    solution and matches the format expected by prepare_disordered.py / utils.py.
+  - Background context on the Au–Cu phase diagram and disorder:
+      Johansson & Linde, Ann. Phys. 417, 1–48 (1936).
+      doi:10.1002/andp.19364170102
+
+DFT reference (AuCu_ordered_mp522_DFT.cif)
+  - Downloaded directly from Materials Project:
+      https://legacy.materialsproject.org/materials/mp-522/cif
+  - mp-522: CuAu, tetragonal P4/mmm, DFT-relaxed primitive cell.
+  - Useful for comparison with the experimental ICSD 42574 structure, but not used as
+    the primary experimental input because it is a computed primitive cell with
+    different lattice parameters from the Bjerkelund 1967 data.
+
+
+Citations (full references)
+---------------------------
+
+[1] E. Bjerkelund, W. B. Pearson, K. Selte, A. Kjekshus,
+    "Lattice Parameters of the CuAu(I) Phase,"
+    Acta Chemica Scandinavica 21, 2900–2901 (1967).
+    doi:10.3891/acta.chem.scand.21-2900
+    → ICSD 42574; ordered L1_0 (AuCu I)
+
+[2] H. Okamoto, K. Hirakawa, R. Kainuma, K. Ishida,
+    "Phase Transitions and Thermal Expansion Behavior in AuCu Alloy,"
+    Materials Transactions 49, 2880–2884 (2008).
+    doi:10.2320/matertrans.MER2008410
+    → disordered fcc lattice parameter (a = 3.875 Å)
+
+[3] C. H. Johansson, J. O. Linde,
+    "Röntgenographische und elektrische Untersuchungen des CuAu-Systems,"
+    Annalen der Physik 417, 1–48 (1936).
+    doi:10.1002/andp.19364170102
+    → foundational work on AuCu ordering/disorder and phase transitions
+
+[4] Materials Project mp-522 (CuAu, P4/mmm):
+    https://legacy.materialsproject.org/materials/mp-522/
+    → DFT reference structure (AuCu_ordered_mp522_DFT.cif)
+
+[5] AFLOW prototype AB_tP2_123_a_d-001 (L1_0 / ICSD 42574):
+    https://aflow.org/p/AB_tP2_123_a_d-001/
+    → cross-reference for ordered structure type and ICSD mapping
+
+
+Usage with Agenticoptimizer
+---------------------------
+
+Ordered:
+  Use AuCu_ordered_L10.cif as a fully ordered reference structure.
+  prepare_disordered.py will report no partial occupancies.
+
+Disordered:
+  python prepare_disordered.py \
+    --input-cif cif_files/AuCu_disordered_fcc.cif \
+    --out-dir prepared/AuCu
+
+  Detected: 1 disorder group (Au0.5Cu0.5), atom_swaps = [Au, Cu], ratio = [0.5, 0.5].
