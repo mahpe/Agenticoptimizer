@@ -681,7 +681,62 @@ def run_system(system, surrogate, seed):
     return summary
 
 
+def preflight_campaign():
+    """Validate every configured arm before any campaign output is created."""
+    assert_frozen_sources_unchanged()
+    if CAMPAIGN_LOCK.exists() or BATCH_STATUS.exists():
+        raise RuntimeError('existing campaign lock or status: archive it before a fresh run')
+    expected = json.loads((PUDA_ROOT/'reproducibility/all15_cif_sha256.json').read_text())
+    if set(expected) != set(SYSTEMS):
+        raise RuntimeError('input digest manifest differs from the frozen system list')
+    arm_paths = [RUN_ROOT/system/f'{OUT_PREFIX}{surrogate}_seed{seed}'
+                 for system in SYSTEMS for seed in SEEDS for surrogate in SURROGATES]
+    if len(arm_paths) != 300 or len(set(arm_paths)) != 300:
+        raise RuntimeError('campaign does not define 300 distinct output paths')
+    collisions = [str(path) for path in arm_paths if path.exists()]
+    if collisions:
+        raise RuntimeError(f'existing arm outputs must be archived before launch: {collisions[:8]}')
+    for system in SYSTEMS:
+        config_path = CONFIG_ROOT/f'{system}.toml'
+        cfg = tomllib.loads(config_path.read_text())
+        source_path = Path(cfg['cif_path'])
+        if not source_path.is_absolute():
+            source_path = PUDA_ROOT/source_path
+        source_path = source_path.resolve()
+        if not source_path.is_relative_to(PUDA_ROOT/'cif_files'):
+            raise RuntimeError(f'{system}: CIF must be packaged under cif_files')
+        if hashlib.sha256(source_path.read_bytes()).hexdigest() != expected[system]:
+            raise RuntimeError(f'{system}: input CIF digest differs from frozen manifest')
+        cfg['cif_path'] = str(source_path)
+        opt_in = resolve_optimization_input(cfg)
+        species, ratio = opt_in.atom_swaps, opt_in.ratio
+        if len(species) != 2:
+            raise ValueError(f'{system}: binary occupancy required')
+        sites, _ = split_lattice_and_framework(opt_in.reference, opt_in.lattice_element)
+        counts = resolve_counts(len(sites), species, ratio)
+        prototype = [species[0]]*counts[species[0]] + [species[1]]*counts[species[1]]
+        if len(prototype) != len(sites):
+            raise RuntimeError(f'{system}: active occupancy count mismatch')
+        jump_spaces = {size: jump_space_size(prototype, size) for size in JUMP_SIZES}
+        oversized = {size: count for size, count in jump_spaces.items()
+                     if count > MAX_EXHAUSTIVE_JUMP_SPACE}
+        if oversized:
+            raise ValueError(f'{system}: jump spaces exceed supported bound: {oversized}')
+        (_, shells, pair_shell, triangle_index,
+         pair_multiplicity, triangle_multiplicity) = geometry(sites)
+        minority = min(counts, key=counts.get)
+        features = cluster_correlation_descriptor(
+            prototype, minority, len(shells), pair_shell, triangle_index,
+            pair_multiplicity, triangle_multiplicity)
+        if len(features) != 2 + len(shells) + len(triangle_index) or not np.isfinite(features).all():
+            raise RuntimeError(f'{system}: invalid descriptor dimensions or values')
+        FixedLineGraphGeometry.from_atoms(sites, cutoff=8.0, max_neighbors=12)
+    assert_frozen_sources_unchanged()
+    print('PREFLIGHT PASS: 15 hashed inputs, graph/jump bounds, 300 absent outputs; no evaluator started', flush=True)
+
+
 def main():
+    preflight_campaign()
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     CAMPAIGN_LOCK.mkdir(exist_ok=False)
     records = []
@@ -719,4 +774,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--preflight']:
+        preflight_campaign()
+    elif len(sys.argv) == 1:
+        main()
+    else:
+        raise SystemExit('usage: runner.py [--preflight]')

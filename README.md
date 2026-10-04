@@ -40,13 +40,17 @@ Allowed methods are `random`, `mc`, `ga`; seeds are 0–4. The wrapper refuses a
 
 ## Four-surrogate campaign
 
-The full runner starts **300 fresh searches** (15 systems × 5 seeds × 4 policies) and can consume substantial GPU time and memory. There is deliberately **no one-arm CLI flag**. Do not run it from a chat gateway or beside another GPU job. Use an external scheduler or a dedicated resource-limited service, with disk/RAM/device checks and a fresh `runs/reproduction_all15_four_surrogates_five_seeds_v1/` destination, then launch from the repository root:
+The full runner starts **300 fresh searches** (15 systems × 5 seeds × 4 policies) and can consume substantial GPU time and memory. There is deliberately **no one-arm CLI flag**. The **only supported launch path** is the resource-contained systemd user-unit launcher after a dedicated GPU/process review and independent GO audit. Its dry preflight checks all 15 CIF digests, compositions, graph/jump bounds, and 300 absent output paths without starting an evaluator:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/python execute_frozen_python.py run_all15_four_surrogates_five_seeds_reproduction_v1.py
+bash launch_all15_four_surrogates_five_seeds_v1.sh --preflight
+# After a separate GPU/resource review and approval:
+bash launch_all15_four_surrogates_five_seeds_v1.sh
 ```
 
-The initial occupancy is step 0; a surrogate arm has a hard limit of 200 **subsequent proposals** and can stop earlier on explicitly recorded finite-policy-space or elite-coverage evidence. Training and selection use only the current system, frozen policy/Skill, and observations from that arm. A failed campaign retains its lock and partial outputs for inspection; do not delete or reuse them blindly. This full GPU campaign has **not** been executed as part of preparing this repository.
+The launcher uses this checkout's `.venv`, sets `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`, and then invokes the captured-byte executor. The runner repeats preflight before creating a campaign lock. The initial occupancy is step 0; a surrogate arm has a hard limit of 200 **subsequent proposals** and can stop earlier on explicitly recorded finite-policy-space or elite-coverage evidence. Training and selection use only the current system, frozen policy/Skill, and observations from that arm. A failed campaign retains its lock and partial outputs for inspection; do not delete or reuse them blindly. This full GPU campaign has **not** been executed as part of preparing this repository.
+
+**Historical wording caveats:** The frozen Skill says ExtraTrees uses four workers, whereas the archived `agentic_policy_v2.py` passes `n_jobs=-1` to scikit-learn. The live-LLM prompt in archived `agentic_optimizer.py` also mentions unsuccessful-attempt/motif-diversity requirements absent from the revised `Skill.md`. Do not present either mismatch as an enforced policy until code and Skill are deliberately versioned together.
 
 ## Release status
 

@@ -50,3 +50,25 @@ def test_example_config_requires_no_host_paths():
     cfg = tomllib.loads((ROOT / 'config.example.toml').read_text())
     assert (ROOT / cfg['cif_path']).is_file()
     assert cfg['agent_params']['backend'] == 'random'
+
+
+def test_campaign_preflight_rejects_any_arm_collision_before_writing(tmp_path, monkeypatch):
+    import importlib.util
+
+    runner = ROOT / 'run_all15_four_surrogates_five_seeds_reproduction_v1.py'
+    monkeypatch.setenv('HERMES_EXECUTED_RUNNER_SHA256', hashlib.sha256(runner.read_bytes()).hexdigest())
+    spec = importlib.util.spec_from_file_location('publication_campaign', runner)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, 'RUN_ROOT', tmp_path / 'campaign')
+    monkeypatch.setattr(module, 'CAMPAIGN_LOCK', module.RUN_ROOT / '.all15_four_surrogates_five_seeds_v1.lock')
+    monkeypatch.setattr(module, 'BATCH_STATUS', module.RUN_ROOT / '_all15_four_surrogates_five_seeds_v1_status.json')
+    # Pick the last arm to ensure this validates the entire 300-arm destination set.
+    collision = module.RUN_ROOT / module.SYSTEMS[-1] / f'{module.OUT_PREFIX}{module.SURROGATES[-1]}_seed{module.SEEDS[-1]}'
+    collision.mkdir(parents=True)
+    with pytest.raises(RuntimeError, match='existing arm outputs'):
+        module.preflight_campaign()
+    assert not module.CAMPAIGN_LOCK.exists()
+    assert not module.BATCH_STATUS.exists()
+    assert len(list(module.RUN_ROOT.rglob('*'))) == 2  # system directory and collision only
