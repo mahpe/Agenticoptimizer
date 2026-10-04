@@ -1,159 +1,53 @@
-# Agenticoptimizer
+# Agenticoptimizer — publication source package
 
-Agentic site-occupancy optimizer for atomistic structures. Three optimizers share the same `config.toml` and MatCalc relaxation helpers in `utils.py`:
+Fixed-composition occupancy searches evaluated with MatCalc/TensorNet. This repository contains the source for three traditional baselines, an optional live-LLM agent, and four **numerical** online-surrogate policies (ExtraTrees, Bayesian ridge, sparse ARD, and a compact ALiEGNN-inspired ensemble). The surrogate methods do **not** query a language model during proposal selection. The best relaxed energy observed in a finite search is not a proof of a global minimum.
 
-| Script | Method |
-|--------|--------|
-| `agentic_optimizer.py` | LLM agent proposes swaps (`Skill.md`) |
-| `genetic_algo_optimizer.py` | ASE genetic algorithm |
-| `Metropolis_MC.py` | Metropolis Monte Carlo |
+## Contents and provenance
 
-## Setup
+- `agentic_optimizer.py`, `Metropolis_MC.py`, `genetic_algo_optimizer.py`, `utils.py`: traditional/LLM entry points and shared evaluation, restored from the historical `Runs/source_code` snapshot via the old local checkout.
+- `agentic_policy_v2.py`, `agentic_policy_ce.py`, `agentic_policy_aliegnn_online.py`, `Skill_all15_four_surrogates_five_seeds_v1.md`: the frozen four-surrogate policies. The graph model is **ALiEGNN-inspired**, not standard ALIGNN and not the original pretrained ALiEGNN model.
+- `run_all15_four_surrogates_five_seeds_reproduction_v1.py`: a *relocated* 15-system × 4-surrogate × 5-seed campaign runner. Its output and input paths differ from the historical runner. `execute_frozen_python.py` binds execution to captured runner bytes.
+- `enum_configs/`: 15 portable configurations; `cif_files/`: the corresponding physical CIF inputs. `reproducibility/all15_cif_sha256.json` records the archived-input SHA-256 digests. Config CIF paths were changed from machine-specific absolute paths to repository-relative paths; physical CIF bytes were checked against the digests.
+- `reproduce_traditional_run.py`: safe dry preflight by default for one fresh random-swap, fixed-rate MC, or GA arm.
 
-Use an environment with ASE and MatCalc (e.g. the postdoc env):
+**Not included:** archived outcomes, trajectories, enumeration databases, pretrained potential weights, secrets, and the unpublished manuscript draft. None of these may be consulted by the surrogate selection policy. Original outputs remain in the external `Runs/` archive and are not overwritten by this package. No publication results or figures are represented as reproduced by merely releasing this source.
 
-```bash
-source /home/mahpe/envs/postdoc/bin/activate
-cd /home/mahpe/Code/Agenticoptimizer
-```
+## Install and verify
 
-For the LLM agent backend (OpenAI-compatible APIs — Hermes, Ollama, vLLM, OpenRouter, OpenAI):
+Use Python 3.11+ with an appropriate CUDA environment for TensorNet evaluation. The pinned package versions in `requirements.txt` match the development environment; a compatible NVIDIA driver/CUDA runtime and model download/access are additional requirements. Installation and source-level testing do not require a GPU evaluation:
 
 ```bash
-export OPENAI_API_KEY="..."
-# Optional for local Ollama / vLLM:
-# export OPENAI_BASE_URL="http://localhost:11434/v1"
-
-python agentic_optimizer.py --agent openai --model hermes3
+python -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests
 ```
 
-Optional Cursor SDK backend:
+The repository does not include a CUDA/model deployment recipe or claim bitwise identity of a fresh GPU run. Numerical reproducibility additionally depends on the loaded model state, package/CUDA versions, hardware, and relaxation settings. Each surrogate run records source, input, and model-state hashes in its output.
+
+## Fresh single-arm baseline preflight
+
+Run commands from the repository root. The first command checks a named system's input hash and prints the would-be command **without** starting MatCalc or creating outputs:
 
 ```bash
-pip install cursor-sdk
-export CURSOR_API_KEY="cursor_..."
-python agentic_optimizer.py --agent cursor --model composer-2.5
+.venv/bin/python reproduce_traditional_run.py --system NaSbSe2 --method mc --seed 0
+# Only after provisioning the GPU/model and checking the destination:
+.venv/bin/python reproduce_traditional_run.py --system NaSbSe2 --method mc --seed 0 --execute
 ```
 
-## Disordered input CIFs
+Allowed methods are `random`, `mc`, `ga`; seeds are 0–4. The wrapper refuses an existing output path. Random-swap and MC are configured for 200 proposal steps following an evaluated initial occupancy; duplicate proposals are not re-relaxed. MC accepts downhill/equal-energy moves and uphill moves with fixed probability 0.3, **not** a temperature-dependent Metropolis rule. GA initializes 20 members and attempts nine offspring generations of 20; 200 relaxations are a target, not a guarantee if novel offspring cannot be generated. Its initial population is not explicitly deduplicated.
 
-Any partially occupied CIF can be expanded to an integer-occupancy supercell before optimization.
+`config.example.toml` is a portable starting point for direct use of the legacy entry points. Copy it to `config.toml` and adjust the input and output. Never commit local API keys or a production `config.toml`.
 
-### Option A — automatic from disordered CIF (recommended)
+## Four-surrogate campaign
 
-Set `cif_path` to your disordered CIF (e.g. `cif_files/AuCu_disordered_fcc.cif`) and keep
-`[prep_params].auto_prepare = true`. All three optimizers will:
-
-1. Detect disorder groups and read `atom_swaps` / `ratio` from the CIF
-2. Build the **smallest supercell** with integer atom counts at that concentration
-3. Feed the prepared structure to agent / GA / MC
-
-Optional overrides in `config.toml`:
-
-```toml
-[prep_params]
-supercell_size = [2, 2, 2]   # manual supercell (must match concentration)
-
-[swap_params]
-ratio = [0.6, 0.4]           # manual concentration (auto-sizes supercell if needed)
-atom_swaps = ["Au", "Cu"]
-lattice_sites = "Au"
-```
-
-### Option B — manual ordered input
-
-For an **ordered** parent CIF (no partial occupancies), disable auto prep and set everything explicitly:
-
-```toml
-cif_path = "NaFePO4_olivine_new.cif"
-supercell_size = [1, 3, 2]
-
-[prep_params]
-auto_prepare = false
-
-[swap_params]
-lattice_sites = "Na"
-atom_swaps = ["Na", "X"]
-ratio = [0.66, 0.34]
-```
-
-### Option C — explicit prep step
+The full runner starts **300 fresh searches** (15 systems × 5 seeds × 4 policies) and can consume substantial GPU time and memory. There is deliberately **no one-arm CLI flag**. Do not run it from a chat gateway or beside another GPU job. Use an external scheduler or a dedicated resource-limited service, with disk/RAM/device checks and a fresh `runs/reproduction_all15_four_surrogates_five_seeds_v1/` destination, then launch from the repository root:
 
 ```bash
-# Inspect disorder groups
-python prepare_disordered.py --input-cif /path/to/CoFe.cif --list-sublattices --out-dir /tmp/x
-
-# Write prepared.cif + config.toml
-python prepare_disordered.py \
-  --input-cif /path/to/CoFe.cif \
-  --out-dir prepared/CoFe \
-  --sublattice-index 0
-
-# Run any optimizer on the prepared config
-python genetic_algo_optimizer.py --config prepared/CoFe/config.toml
-python Metropolis_MC.py --config prepared/CoFe/config.toml
-python agentic_optimizer.py --config prepared/CoFe/config.toml --agent random
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python execute_frozen_python.py run_all15_four_surrogates_five_seeds_reproduction_v1.py
 ```
 
-Prepared outputs:
+The initial occupancy is step 0; a surrogate arm has a hard limit of 200 **subsequent proposals** and can stop earlier on explicitly recorded finite-policy-space or elite-coverage evidence. Training and selection use only the current system, frozen policy/Skill, and observations from that arm. A failed campaign retains its lock and partial outputs for inspection; do not delete or reuse them blindly. This full GPU campaign has **not** been executed as part of preparing this repository.
 
-- `prepared.cif` — supercell with placeholder atoms on swap sites
-- `manifest.json` — min cell size, species ratios, sublattice info
-- `config.toml` — ready-to-run settings (`auto_prepare = false`, `supercell_size = [1,1,1]`)
+## Release status
 
-## Usage
-
-```bash
-# AuCu — auto from disordered CIF (uses config.toml)
-python agentic_optimizer.py --agent random --max-iters 2
-python Metropolis_MC.py --num-steps 3 --out-dir runs/mc_aucu
-python genetic_algo_optimizer.py --num-gens 1 --pop-size 4 --out-dir runs/ga_aucu
-
-# Agent-driven optimization (Skill.md + LLM backend from config)
-python agentic_optimizer.py
-
-# Hermes / Ollama / OpenAI-compatible API
-python agentic_optimizer.py --agent openai --model hermes3 --base-url http://localhost:11434/v1
-
-# Random-swap baseline (no LLM; useful to test the relax loop)
-python agentic_optimizer.py --agent random --max-iters 3
-
-# Genetic algorithm
-python genetic_algo_optimizer.py --num-gens 2 --pop-size 5 --out-dir runs/ga_test
-
-# Metropolis Monte Carlo
-python Metropolis_MC.py --num-steps 10 --out-dir runs/mc_test
-
-# Custom config / output
-python agentic_optimizer.py --config config.toml --out-dir runs/my_run --seed 1 --max-iters 20
-```
-
-### CLI options
-
-| Flag | Description |
-|------|-------------|
-| `--config` | Path to `config.toml` (default: `./config.toml`) |
-| `--skill` | Path to `Skill.md` |
-| `--agent` | `openai` (default), `cursor`, or `random` |
-| `--model` | Model id (e.g. `hermes3`, `nousresearch/hermes-3-llama-3.1-70b`) |
-| `--base-url` | OpenAI-compatible API URL (Ollama, vLLM, OpenRouter, …) |
-| `--max-iters` | Max agent swap steps |
-| `--seed` | RNG seed for the initial occupancy |
-| `--out-dir` | Output directory (default: `runs/latest`) |
-
-### Config (`config.toml`)
-
-- **`[prep_params]`** — auto-expand disordered CIFs (`auto_prepare`, `max_cell_size`, `sublattice_index`)
-- **`cif_path` / `supercell_size`** — input structure (manual path for ordered systems)
-- **`[swap_params]`** — swap-site placeholder (`lattice_sites`), allowed species (`atom_swaps`), and composition (`ratio`; use `X` for vacancies)
-- **`[relax_params]`** — MatCalc / ASE relaxation settings
-- **`[agent_params]`** — iterations, swaps per step, model, skill path, output dir
-
-### Outputs
-
-Written under `--out-dir` (or `agent_params.out_dir`):
-
-- `best.xyz` — lowest-energy relaxed structure (SinglePointCalculator with energy/forces/stress)
-- `atom_swaps.xyz` — trajectory of evaluated configurations (label, occupancy, energy in metadata)
-- `summary.json` — energies, occupancies, and swap history
-- `relaxation.traj` — ASE trajectory from the latest relax
+Before public release, the project owner must choose a license and confirm citation metadata/coauthor credit, CIF redistribution permissions, model-weight access, and the final manuscript wording. The GitHub repository remains private until that review is complete.

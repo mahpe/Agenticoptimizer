@@ -1,0 +1,52 @@
+"""Source-package checks that do not launch a GPU campaign."""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import tomllib
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SYSTEMS = (
+    'AlReGe', 'Ba2ScTaO6', 'CoPt', 'Cu3Au', 'Cu3Au_123',
+    'FeCo', 'FeCo_331', 'FePt', 'InCuTe2', 'LiYS2',
+    'NaSbSe2', 'Ni2SbTe2', 'ThMn2Co3', 'TiCuNi', 'V2ZnO4',
+)
+
+
+def test_portable_configs_bind_all_historical_cif_bytes():
+    expected = json.loads((ROOT / 'reproducibility/all15_cif_sha256.json').read_text())
+    assert set(expected) == set(SYSTEMS)
+    assert {p.stem for p in (ROOT / 'enum_configs').glob('*.toml')} == set(SYSTEMS)
+    for system in SYSTEMS:
+        config = tomllib.loads((ROOT / 'enum_configs' / f'{system}.toml').read_text())
+        path = Path(config['cif_path'])
+        assert not path.is_absolute()
+        source = (ROOT / path).resolve()
+        assert source.is_relative_to(ROOT / 'cif_files')
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == expected[system]
+        assert config['ga_params']['pop_size'] == 20
+        assert config['ga_params']['num_gens'] == 9
+        assert config['mc_params']['acceptance_rate'] == 0.3
+
+
+@pytest.mark.parametrize('method', ['random', 'mc', 'ga'])
+def test_baseline_preflight_is_fresh_and_does_not_evaluate(tmp_path, method):
+    from reproduce_traditional_run import command
+
+    out = tmp_path / 'new-output'
+    argv = command('NaSbSe2', method, 0, out)
+    assert '--config' in argv and str(out) in argv
+    assert not out.exists()
+    if method == 'mc':
+        assert '--num-steps' in argv
+    else:
+        assert '--num-steps' not in argv
+
+
+def test_example_config_requires_no_host_paths():
+    cfg = tomllib.loads((ROOT / 'config.example.toml').read_text())
+    assert (ROOT / cfg['cif_path']).is_file()
+    assert cfg['agent_params']['backend'] == 'random'

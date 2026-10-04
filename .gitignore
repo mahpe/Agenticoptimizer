@@ -5,8 +5,23 @@ config.toml
 .env
 !.env.example
 
-# Run outputs
+# Run outputs and frozen per-run input snapshots
 runs/
+.frozen_benchmark_inputs/
+*.log
+*.db
+*.traj
+*.xyz
+*.extxyz
+*.model
+*.pt
+*.pth
+*.ckpt
+*.bak
+
+# Local caches and rendered manuscript outputs
+.pytest_cache/
+*.pdf
 
 # Python
 __pycache__/

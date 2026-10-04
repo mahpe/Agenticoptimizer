@@ -71,12 +71,12 @@ def setup_optimizer(
     calc_name="TensorNet-MatPES-PBE-2025.2",
     optimizer="BFGS",
     interval=1,
-    fmax=0.2,
+    fmax=0.02,
     max_steps=500,
     relax_atoms=True,
     relax_cell=True,
     cell_filter="FrechetCellFilter",
-    fix_symmetry=False,
+    fix_symmetry=True,
     fix_atoms=False,
     symprec=1e-3,
     traj_file="relaxation.traj",
@@ -86,6 +86,7 @@ def setup_optimizer(
         cell_filter = CELL_FILTERS.get(cell_filter, CellFilter)
 
     calculator = mtc.load_fp(calc_name)
+    calculator.potential.to("cuda:0")
     return mtc.RelaxCalc(
         calculator,
         optimizer=optimizer,

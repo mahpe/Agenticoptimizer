@@ -1,0 +1,30 @@
+cif_path = "cif_files/CoPt_mp-949_icsd624774.cif"
+[prep_params]
+auto_prepare = true
+max_cell_size = 20
+sublattice_index = 0
+occupancy_tolerance = 2.0
+supercell_size = [1, 2, 2]
+
+[relax_params]
+symprec = 1.0e-3
+
+[agent_params]
+backend = "random"
+max_iters = 200
+max_swaps_per_step = 4
+seed = 0
+skill_path = "Skill.md"
+out_dir = "runs/CoPt_random_200"
+
+[ga_params]
+num_gens = 9
+pop_size = 20
+random_seed = 0
+out_dir = "runs/CoPt_ga_200"
+
+[mc_params]
+num_steps = 200
+acceptance_rate = 0.3
+seed = 0
+out_dir = "runs/CoPt_mc_200"

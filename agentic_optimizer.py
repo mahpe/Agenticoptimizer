@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +47,8 @@ DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 
+## StepRecord and OptimizerState classes
+# StepRecord: a single step of the optimization
 @dataclass
 class StepRecord:
     step: int
@@ -54,13 +57,14 @@ class StepRecord:
     swaps: list[list[int]]
     rationale: str = ""
 
-
+# OptimizerState: the state of the optimization
 @dataclass
 class OptimizerState:
     occupancy: list[str]
     energy: float
     history: list[StepRecord] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)  # occupancy strings already relaxed
+    last_rejects: list[str] = field(default_factory=list)
 
     def occupancy_key(self, occupancy: list[str] | None = None) -> str:
         return "".join(occupancy if occupancy is not None else self.occupancy)
@@ -228,10 +232,30 @@ class SkillAgent:
             "Content-Type": "application/json",
         }
         url = f"{self.base_url}/chat/completions"
-        with httpx.Client(timeout=120.0) as client:
-            response = client.post(url, headers=headers, json=payload)
+        data = None
+        last_response = None
+        for attempt in range(8):
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(url, headers=headers, json=payload)
+            last_response = response
+            if response.status_code == 429 or response.status_code >= 500:
+                retry_after = response.headers.get("Retry-After") or response.headers.get("retry-after")
+                try:
+                    wait = float(retry_after) if retry_after else float(min(2 ** attempt, 60))
+                except ValueError:
+                    wait = float(min(2 ** attempt, 60))
+                print(
+                    f"OpenAI HTTP {response.status_code}; retrying in {wait:.1f}s "
+                    f"(attempt {attempt + 1}/8)"
+                )
+                time.sleep(wait)
+                continue
             response.raise_for_status()
             data = response.json()
+            break
+        if data is None:
+            last_response.raise_for_status()
+            raise RuntimeError("OpenAI-compatible API request failed after retries")
 
         choices = data.get("choices") or []
         if not choices:
@@ -317,6 +341,22 @@ class SkillAgent:
             for r in recent
         ]
         history_block = "\n".join(history_lines) if history_lines else "  (none yet)"
+        reject_lines = [f"  {line}" for line in state.last_rejects[-6:]]
+        reject_block = "\n".join(reject_lines) if reject_lines else "  (none)"
+        best = min(state.history, key=lambda r: r.energy) if state.history else None
+        if best is None:
+            best_block = "  (none yet)"
+            on_best = "yes (initial)"
+        else:
+            on_best = (
+                "yes — search unlike-site neighbors of this occupancy"
+                if state.occupancy == best.occupancy
+                else "NO — the only legal move is to restore the best occupancy"
+            )
+            best_block = (
+                f"  step {best.step}: E={best.energy:.8f} eV, "
+                f"occ={''.join(best.occupancy)}"
+            )
 
         ratio_parts = [
             f"{sym}={target_counts.get(sym, 0)} ({ratio[i]:.4f})"
@@ -342,12 +382,21 @@ class SkillAgent:
 - Current counts: {occupancy_counts(state.occupancy)} (must match target)
 - Current energy: {state.energy:.8f} eV
 - Current occupancy (index → symbol): {state.occupancy}
+- Currently on the best occupancy: {on_best}
+- Best energy so far (runtime keeps this structure):
+{best_block}
 - Max swaps this step: {max_swaps}
 
 ## Recent history
 {history_block}
 
-Propose the next swap move now. Reply with JSON only.
+## Recent rejected proposals (not evaluated; do not repeat)
+{reject_block}
+
+Propose the next swap. Follow Skill.md stop rules strictly: do **not** set
+`"done": true` until you have searched neighbors of the **best** occupancy
+and met the minimum unsuccessful-attempt / motif-diversity requirements.
+Reply with JSON only.
 """
 
 
@@ -387,7 +436,7 @@ def run_agent(cfg: dict, args: argparse.Namespace) -> OptimizerState:
 
     # Setup MatCalc relaxation.
     relax_kwargs = deepcopy(relax)
-    relax_kwargs["traj_file"] = str(out_dir / "relaxation.traj")
+    relax_kwargs["traj_file"] = str(out_dir / "relaxation.xyz")
     optimizer = setup_optimizer(**relax_kwargs)
 
     # Create initial occupancy and relax.
@@ -475,7 +524,22 @@ def run_agent(cfg: dict, args: argparse.Namespace) -> OptimizerState:
                 continue
 
             key = state.occupancy_key(new_occ)
+            best_key = state.occupancy_key(best_occ)
+            # Restoring best is required after an uphill move; do not re-relax.
+            if key == best_key and state.occupancy_key() != best_key:
+                state.occupancy = best_occ.copy()
+                state.energy = best_energy
+                state.last_rejects.clear()
+                print(
+                    f"Restored best occupancy (already evaluated; "
+                    f"E={best_energy:.8f} eV, no re-relax)."
+                )
+                continue
             if key in state.seen:
+                msg = (
+                    f"step {step}: swaps={swaps} already seen occ={''.join(new_occ)}"
+                )
+                state.last_rejects.append(msg)
                 print("Rejected: duplicate occupancy.")
                 continue
 
@@ -486,6 +550,7 @@ def run_agent(cfg: dict, args: argparse.Namespace) -> OptimizerState:
             state.seen.add(key)
             state.occupancy = new_occ
             state.energy = energy
+            state.last_rejects.clear()
             state.history.append(
                 StepRecord(
                     step=step,

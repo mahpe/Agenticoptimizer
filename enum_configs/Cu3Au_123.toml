@@ -1,0 +1,35 @@
+cif_path = "cif_files/Cu3Au_mp-2258_icsd58431.cif"
+[prep_params]
+auto_prepare = true
+max_cell_size = 20
+sublattice_index = 0
+occupancy_tolerance = 2.0
+supercell_size = [1, 2, 3]
+
+[relax_params]
+symprec = 1.0e-3
+
+# 24 swap sites cannot represent the CIF's nominal 0.8/0.2 ratio exactly.
+# Use the nearest integer composition: 19/24 and 5/24.
+[swap_params]
+ratio = [0.7916666666666666, 0.20833333333333334]
+
+[agent_params]
+backend = "random"
+max_iters = 200
+max_swaps_per_step = 4
+seed = 0
+skill_path = "Skill.md"
+out_dir = "runs/Cu3Au_123_random_200"
+
+[ga_params]
+num_gens = 9
+pop_size = 20
+random_seed = 0
+out_dir = "runs/Cu3Au_123_ga_200"
+
+[mc_params]
+num_steps = 200
+acceptance_rate = 0.3
+seed = 0
+out_dir = "runs/Cu3Au_123_mc_200"

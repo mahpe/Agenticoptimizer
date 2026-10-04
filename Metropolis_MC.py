@@ -106,7 +106,7 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
     print(f"MC steps: {num_steps}, acceptance_rate: {acceptance_rate:.3f}, seed: {seed}")
 
     relax_kwargs = deepcopy(relax)
-    relax_kwargs["traj_file"] = str(out_dir / "relaxation.traj")
+    relax_kwargs["traj_file"] = str(out_dir / "relaxation.xyz")
     optimizer = setup_optimizer(**relax_kwargs)
 
     occupancy = initial_occupancy(n_sites, species, ratio, rng)

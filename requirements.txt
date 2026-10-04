@@ -1,0 +1,13 @@
+# Tested on the development environment used for source-level verification.
+# GPU MatCalc/TensorNet execution additionally requires a compatible CUDA stack.
+numpy==2.4.6
+ase==3.29.0
+ase-ga==1.0.3
+matcalc==0.5.1
+pymatgen==2026.5.4
+scikit-learn==1.9.0
+torch==2.13.0
+packaging==26.2
+httpx==0.28.1
+pytest==9.1.1
+# Optional LLM backend: cursor-sdk==0.1.9

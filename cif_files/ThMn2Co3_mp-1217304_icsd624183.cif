@@ -1,0 +1,91 @@
+#(C) 2025 by FIZ Karlsruhe - Leibniz Institute for Information Infrastructure.  All rights reserved.
+# Downloaded by AVV9002989 (Wei, Nong: nong0003@e.ntu.edu.sg)
+# Kedar Hippalgaonkar's Materials by Design Lab, Nanyang Technological University
+data_624183-ICSD
+_database_code_ICSD 624183
+_audit_creation_date 2013-08-01
+_audit_update_record 2019-08-01
+_chemical_name_common 'Cobalt manganese thorium (3/2/1)'
+_chemical_formula_structural 'Co3 Mn2 Th'
+_chemical_formula_sum 'Co3 Mn2 Th1'
+_chemical_name_structure_type CaCu5
+_exptl_crystal_density_diffrn 9.34
+_citation_title
+'Structural and magnetization studies on ThCo5-xMnx and ThNi5-xMnx ternaries'
+_publ_section_comment 'Cell and Type only determined'
+loop_
+_citation_id
+_citation_journal_full
+_citation_year
+_citation_journal_volume
+_citation_page_first
+_citation_page_last
+_citation_journal_id_ASTM
+primary 'Physica Status Solidi A: Applied Research' 1977 43 317 320 PSSABA
+loop_
+_citation_author_citation_id
+_citation_author_name
+primary 'Moldovan, A.G.'
+primary 'Malik, S.K.'
+primary 'Wallace, W.E.'
+_cell_length_a 5.081
+_cell_length_b 5.081
+_cell_length_c 4.124
+_cell_angle_alpha 90.
+_cell_angle_beta 90.
+_cell_angle_gamma 120.
+_cell_volume 92.2
+_cell_formula_units_Z 1
+_space_group_name_H-M_alt 'P 6/m m m'
+_space_group_IT_number 191
+loop_
+_space_group_symop_id
+_space_group_symop_operation_xyz
+1 '-x, -x+y, -z'
+2 'x-y, -y, -z'
+3 'y, x, -z'
+4 '-x+y, -x, -z'
+5 '-y, x-y, -z'
+6 'x, y, -z'
+7 'x, x-y, -z'
+8 '-x+y, y, -z'
+9 '-y, -x, -z'
+10 'x-y, x, -z'
+11 'y, -x+y, -z'
+12 '-x, -y, -z'
+13 'x, x-y, z'
+14 '-x+y, y, z'
+15 '-y, -x, z'
+16 'x-y, x, z'
+17 'y, -x+y, z'
+18 '-x, -y, z'
+19 '-x, -x+y, z'
+20 'x-y, -y, z'
+21 'y, x, z'
+22 '-x+y, -x, z'
+23 '-y, x-y, z'
+24 'x, y, z'
+loop_
+_atom_type_symbol
+_atom_type_oxidation_number
+Th0+ 0
+Co0+ 0
+Mn0+ 0
+Co0+ 0
+Mn0+ 0
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_symmetry_multiplicity
+_atom_site_Wyckoff_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_B_iso_or_equiv
+_atom_site_occupancy
+Th1 Th0+ 1 a 0 0 0 . 1.
+Co1 Co0+ 2 c 0.3333 0.6667 0 . 0.6
+Mn1 Mn0+ 2 c 0.3333 0.6667 0 . 0.4
+Co2 Co0+ 3 g 0.5 0 0.5 . 0.6
+Mn2 Mn0+ 3 g 0.5 0 0.5 . 0.4
+#End of TTdata_624183-ICSD
