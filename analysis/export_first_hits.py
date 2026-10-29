@@ -84,6 +84,8 @@ def build_rows(*, traditional_root: Path, surrogate_root: Path, reference_root: 
                         raise ValueError(f"GA best energy increased: {path}")
                     unit = "generation"
                     relaxations = int(data["relaxations"])
+                    if relaxations < int(data["population_size"]) + len(indexes) - 1:
+                        raise ValueError(f"GA relaxation count below recorded generations: {path}")
                 else:
                     energies = [float(s["energy"]) for s in steps]
                     unit = "MC iteration" if method == "mc" else "proposal step"
@@ -99,7 +101,7 @@ def build_rows(*, traditional_root: Path, surrogate_root: Path, reference_root: 
                 pop = int(data["population_size"]) if method == "ga" else 0
                 rows.append(dict(zip(FIELDS, (
                     system, method, seed, unit, "" if generation is None else generation,
-                    generation * pop + 1 if generation is not None and pop else "",
+                    (pop + generation if generation else 1) if generation is not None and pop else "",
                     min((generation + 1) * pop, relaxations) if generation is not None and pop else "",
                     energies[hit] if hit is not None else "", best, reference,
                     1000 * (best - reference), hit is not None, tolerance_ev,
@@ -110,9 +112,14 @@ def build_rows(*, traditional_root: Path, surrogate_root: Path, reference_root: 
     return rows
 
 
-def write_rows(output: Path, rows: list[dict]) -> None:
-    """Create a semicolon CSV atomically; never overwrite an existing result."""
+def write_rows(output: Path, rows: list[dict], *, run_roots: tuple[Path, ...]) -> None:
+    """Create a semicolon CSV atomically, outside run roots, without overwriting."""
     output = Path(output)
+    resolved_output = output.resolve()
+    for root in run_roots:
+        resolved_root = Path(root).resolve()
+        if resolved_output == resolved_root or resolved_root in resolved_output.parents:
+            raise ValueError(f"output must be outside run root: {root}")
     if output.exists():
         raise FileExistsError(output)
     if not output.parent.is_dir():
@@ -153,7 +160,7 @@ def main() -> None:
     rows = build_rows(traditional_root=args.traditional_root, surrogate_root=args.surrogate_root,
                       reference_root=args.reference_root, tolerance_ev=args.tolerance_ev,
                       surrogate_prefix=args.surrogate_prefix, expected_runner_sha256=runner_hash)
-    write_rows(args.output, rows)
+    write_rows(args.output, rows, run_roots=(args.traditional_root, args.surrogate_root))
     print(f"Wrote {len(rows)} rows to {args.output}; tolerance={args.tolerance_ev:g} eV")
 
 

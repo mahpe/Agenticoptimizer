@@ -67,7 +67,7 @@ def test_first_hits_use_recorded_steps_and_ga_generation_interval(tmp_path):
     assert by_method["bayesian_ridge"]["first_reference_hit_step"] == 2
     assert all(row["finite_reference_energy_eV"] == -2.0 for row in rows)
     output = tmp_path / "first_hits.csv"
-    exporter.write_rows(output, rows)
+    exporter.write_rows(output, rows, run_roots=(traditional, surrogate))
     with output.open(newline="") as stream:
         readback = list(csv.DictReader(stream, delimiter=";"))
     assert len(readback) == 3
@@ -76,13 +76,18 @@ def test_first_hits_use_recorded_steps_and_ga_generation_interval(tmp_path):
 
 def test_missing_run_fails_without_creating_export(tmp_path):
     exporter = load_exporter()
+    reference = tmp_path / "references" / "Example"
+    reference.mkdir(parents=True)
+    atoms = Atoms("H", positions=[(0, 0, 0)], cell=[5, 5, 5], pbc=True)
+    atoms.calc = SinglePointCalculator(atoms, energy=-2.0, forces=np.zeros((1, 3)))
+    write(reference / "optimized_all.extxyz", atoms)
     out = tmp_path / "not_written.csv"
     with pytest.raises(FileNotFoundError):
         rows = exporter.build_rows(traditional_root=tmp_path / "traditional",
                                    surrogate_root=tmp_path / "surrogates",
                                    reference_root=tmp_path / "references",
                                    systems=("Example",), methods=("random",), seeds=(0,))
-        exporter.write_rows(out, rows)
+        exporter.write_rows(out, rows, run_roots=(tmp_path / "traditional", tmp_path / "surrogates"))
     assert not out.exists()
 
 
@@ -91,8 +96,20 @@ def test_export_never_overwrites_existing_csv(tmp_path):
     out = tmp_path / "existing.csv"
     out.write_text("important prior result\n")
     with pytest.raises(FileExistsError):
-        exporter.write_rows(out, [])
+        exporter.write_rows(out, [], run_roots=(tmp_path / "traditional",))
     assert out.read_text() == "important prior result\n"
+
+
+def test_rejects_output_inside_run_root_even_through_symlink(tmp_path):
+    exporter = load_exporter()
+    run_root = tmp_path / "traditional"
+    run_root.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(run_root, target_is_directory=True)
+    destination = alias / "first_hits.csv"
+    with pytest.raises(ValueError, match="run root"):
+        exporter.write_rows(destination, [], run_roots=(run_root,))
+    assert not destination.exists()
 
 
 def test_reported_best_must_match_trajectory_at_archived_energy_scale(tmp_path):
@@ -111,6 +128,50 @@ def test_reported_best_must_match_trajectory_at_archived_energy_scale(tmp_path):
                             surrogate_root=tmp_path / "surrogates",
                             reference_root=reference.parent,
                             systems=("Example",), methods=("random",), seeds=(0,))
+
+
+def test_ga_later_hit_after_partial_generation_has_sound_bounds(tmp_path):
+    exporter = load_exporter()
+    reference = tmp_path / "refs" / "Example"
+    reference.mkdir(parents=True)
+    atoms = Atoms("H", positions=[(0, 0, 0)], cell=[5, 5, 5], pbc=True)
+    atoms.calc = SinglePointCalculator(atoms, energy=-2.0, forces=np.zeros((1, 3)))
+    write(reference / "optimized_all.extxyz", atoms)
+    make_summary(tmp_path / "traditional", "ga_seed0", {
+        "random_seed": 0, "population_size": 20, "relaxations": 25,
+        "best_energy_eV": -2.0,
+        "steps": [{"step": 0, "best_energy_eV": -1.5},
+                  {"step": 1, "best_energy_eV": -1.8},
+                  {"step": 2, "best_energy_eV": -2.0}],
+    })
+    rows = exporter.build_rows(traditional_root=tmp_path / "traditional",
+                               surrogate_root=tmp_path / "surrogates",
+                               reference_root=reference.parent,
+                               systems=("Example",), methods=("ga",), seeds=(0,))
+    assert rows[0]["first_reference_hit_step"] == 2
+    assert rows[0]["first_hit_generation_eval_min"] == 22
+    assert rows[0]["first_hit_generation_eval_max"] == 25
+
+
+def test_ga_rejects_relaxation_count_below_recorded_generations(tmp_path):
+    exporter = load_exporter()
+    reference = tmp_path / "refs" / "Example"
+    reference.mkdir(parents=True)
+    atoms = Atoms("H", positions=[(0, 0, 0)], cell=[5, 5, 5], pbc=True)
+    atoms.calc = SinglePointCalculator(atoms, energy=-2.0, forces=np.zeros((1, 3)))
+    write(reference / "optimized_all.extxyz", atoms)
+    make_summary(tmp_path / "traditional", "ga_seed0", {
+        "random_seed": 0, "population_size": 20, "relaxations": 21,
+        "best_energy_eV": -2.0,
+        "steps": [{"step": 0, "best_energy_eV": -1.5},
+                  {"step": 1, "best_energy_eV": -1.8},
+                  {"step": 2, "best_energy_eV": -2.0}],
+    })
+    with pytest.raises(ValueError, match="GA relaxation count"):
+        exporter.build_rows(traditional_root=tmp_path / "traditional",
+                            surrogate_root=tmp_path / "surrogates",
+                            reference_root=reference.parent,
+                            systems=("Example",), methods=("ga",), seeds=(0,))
 
 
 def test_nonfinite_reference_energy_is_rejected(tmp_path):
