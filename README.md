@@ -17,13 +17,14 @@ The publication set is **14 systems**. NaSbSe2 is not included.
   - `reproduce_traditional_run.py`: dry preflight by default for one random-swap, Monte Carlo, or genetic-algorithm arm.
   - `Skill_all14_four_surrogates_five_seeds_v1.md`: frozen campaign contract for the four numerical surrogates.
 - `Skill.md`: instructions for the optional live-LLM agent. The surrogate campaign does not use it to choose moves.
-- `enum_configs/`: one portable TOML file per system. `cif_files/`: the CIF inputs those configs name, plus `NaFePO4_olivine_new.cif` as a separate example that is not one of the 14. `reproducibility/all14_cif_sha256.json` records the SHA-256 digest of each campaign CIF. [Source provenance](reproducibility/SOURCE_PROVENANCE.md) records what was carried over from the earlier 15-system archive.
+- `analysis/export_first_hits.py`: read-only, post-run seven-method first-hit CSV exporter; it never participates in candidate selection.
+- `enum_configs/`: one portable TOML file per system. `cif_files/`: the CIF inputs those configs name, plus `NaFePO4_olivine_new.cif` as a separate example that is not one of the 14. `reproducibility/all14_cif_sha256.json` records independently archived SHA-256 values for each campaign CIF. [Source provenance](reproducibility/SOURCE_PROVENANCE.md) records what was carried over or adapted from the earlier 15-system archive.
 
 **Not included:** archived outcomes, trajectories, enumeration databases, pretrained potential weights, secrets, and the unpublished manuscript draft. None of these may be consulted by the surrogate selection policy. Original outputs remain in the external `Runs/` archive and are not overwritten by this package. No publication results or figures are represented as reproduced by merely releasing this source.
 
 ## Install and verify
 
-Use Python 3.11+ with an appropriate CUDA environment for TensorNet evaluation. The pinned package versions in `requirements.txt` match the development environment; a compatible NVIDIA driver/CUDA runtime and model download/access are additional requirements. Installation and source-level testing do not require a GPU evaluation:
+Use Python 3.11+ with an appropriate CUDA environment for TensorNet evaluation. The pinned package versions in `requirements.txt` match the observed [source-test environment](reproducibility/TESTED_ENVIRONMENT.md), but they are **not** a transitive CUDA/model lock or a verified clean installation. A compatible NVIDIA driver/CUDA runtime and model download/access are additional requirements. Installation and source-level testing do not require a GPU evaluation:
 
 ```bash
 python -m venv .venv
@@ -60,6 +61,25 @@ bash campaign/launch_all14_four_surrogates_five_seeds_v1.sh
 The launcher uses this checkout's `.venv`, sets `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`, and then invokes the captured-byte executor. The runner repeats preflight before creating a campaign lock. The initial occupancy is step 0; a surrogate arm has a hard limit of 200 **subsequent proposals** and can stop earlier on explicitly recorded finite-policy-space or elite-coverage evidence. Training and selection use only the current system, frozen policy/Skill, and observations from that arm. A failed campaign retains its lock and partial outputs for inspection; do not delete or reuse them blindly. This full GPU campaign has **not** been executed as part of preparing this repository.
 
 **Historical wording caveats:** The frozen Skill says ExtraTrees uses four workers, whereas `methods/agentic_policy_v2.py` passes `n_jobs=-1` to scikit-learn. The live-LLM prompt in `methods/agentic_optimizer.py` also mentions unsuccessful-attempt/motif-diversity requirements absent from the revised `Skill.md`. Do not present either mismatch as an enforced policy until code and Skill are deliberately versioned together.
+
+## Post-run evidence and seven-method export
+
+The numerical surrogate campaign produces 280 arms. For a seven-method, five-seed comparison, run the traditional methods **separately**, one fresh arm at a time, for all 14 systems × three methods × five seeds, using `campaign/reproduce_traditional_run.py` and a reviewed GPU/resource envelope. The publication package does not contain those completed runs or a seven-method all-at-once launcher. Do not reuse archived outcomes and call the fresh campaign reproduced.
+
+Only **after** every run has completed, provide a separately versioned finite-enumeration reference directory with `<system>/optimized_all.extxyz` for each of the 14 cases. Its energies are specific to that reference evaluator and finite search; they are not an unrestricted global-minimum proof. The exporter has no built-in archive or machine paths, never writes into a run directory, and fails if any of its 490 requested summaries or references is missing:
+
+```bash
+.venv/bin/python analysis/export_first_hits.py \
+  --traditional-root runs/reproduction_traditional_v1 \
+  --surrogate-root runs/reproduction_all14_four_surrogates_five_seeds_v1 \
+  --reference-root /path/to/versioned/finite-reference-structures \
+  --runner-source campaign/run_all14_four_surrogates_five_seeds_reproduction_v1.py \
+  --output first_hits_all14_7methods.csv
+```
+
+The output is a **semicolon-delimited** per-run table. The default energy hit tolerance is `2e-5 eV`; supply `--tolerance-ev` to report a different tolerance. Step 0 is an initial evaluation for proposal methods. GA records **generations**, so its evaluation minimum/maximum columns give the generation's possible evaluation interval, *not* the actual first-hit evaluation. First-hit times are retrospective and are not the compute actually saved if runs continued to their stopping condition. To analyze the historical all-15-prefixed surrogate archive, additionally pass its explicit `--surrogate-prefix` and matching `--runner-source` rather than redirecting the online agent to previous outcomes.
+
+`plot_all_convergence_runs.ipynb` remains an exploratory notebook with paths into the original `Runs/` archive; it is **not** the portable figure-reproduction route. The specialized Na–Fe/Ga charge-ordering study requires its own versioned input/model/charge-mapping and experimental structure comparator. Neither that case study nor the archived enumeration workflow is reproduced by the 14-system runner. Paper-figure generation, a licensed reference-data release, independent review, and actual GPU results are outstanding release gates.
 
 ## Release status
 
