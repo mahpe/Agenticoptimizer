@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""Strict-isolation four-surrogate campaign on 15 configured systems, five seeds each.
+"""Strict-isolation four-surrogate campaign on 14 configured systems, five seeds each.
 
-Production selection reads only the frozen Skill/policy, current system input,
-and observations from this run. It may stop earlier on frozen evidence but must
-never evaluate more than 200 proposals after the initial step-0 structure.
+NaSbSe2 is not part of this set. Production selection reads only the frozen
+Skill/policy, the current system input, and observations from this run. An arm
+may stop earlier on frozen evidence but must never evaluate more than 200
+proposals after the initial step-0 structure.
+
+Layout expected by this file:
+  <repo>/methods/          policy modules and utils.py
+  <repo>/enum_configs/     one TOML per system
+  <repo>/cif_files/        CIFs named by those configs
+  <repo>/campaign/         this runner, the launcher, and the campaign Skill
 """
 from __future__ import annotations
 
@@ -24,13 +31,16 @@ import numpy as np
 import torch
 from ase.io import write
 
-PUDA_ROOT = Path(__file__).resolve().parent
-MAHPE_ROOT = PUDA_ROOT
-BASE_POLICY = PUDA_ROOT/'agentic_policy_v2.py'
-CE_POLICY = PUDA_ROOT/'agentic_policy_ce.py'
-ALIE_POLICY = PUDA_ROOT/'agentic_policy_aliegnn_online.py'
-UTILS = PUDA_ROOT/'utils.py'
-SKILL = PUDA_ROOT/'Skill_all15_four_surrogates_five_seeds_v1.md'
+# campaign/ sits one level below the repository root; search code is in methods/.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PUDA_ROOT = REPO_ROOT
+MAHPE_ROOT = REPO_ROOT
+METHODS_DIR = REPO_ROOT / 'methods'
+BASE_POLICY = METHODS_DIR/'agentic_policy_v2.py'
+CE_POLICY = METHODS_DIR/'agentic_policy_ce.py'
+ALIE_POLICY = METHODS_DIR/'agentic_policy_aliegnn_online.py'
+UTILS = METHODS_DIR/'utils.py'
+SKILL = Path(__file__).resolve().parent/'Skill_all14_four_surrogates_five_seeds_v1.md'
 FROZEN_SOURCE_PATHS = {
     'skill_sha256': SKILL,
     'base_policy_sha256': BASE_POLICY,
@@ -61,8 +71,9 @@ def load_captured_module(name, path, source_key):
     return module
 
 
-sys.path.insert(0, str(PUDA_ROOT))
-sys.path.insert(1, str(MAHPE_ROOT))
+# methods/ must be importable: the CE and ALiEGNN modules import agentic_policy_v2.
+sys.path.insert(0, str(METHODS_DIR))
+sys.path.insert(1, str(REPO_ROOT))
 utils_module = load_captured_module('utils', UTILS, 'utils_sha256')
 SwapStructureWriter = utils_module.SwapStructureWriter
 evaluate_occupancy = utils_module.evaluate_occupancy
@@ -96,9 +107,9 @@ for _key, _path in FROZEN_SOURCE_PATHS.items():
         raise ImportError(f'frozen source changed during captured-module load: {_path}')
 
 CONFIG_ROOT = PUDA_ROOT/'enum_configs'
-RUN_ROOT = MAHPE_ROOT/'runs'/'reproduction_all15_four_surrogates_five_seeds_v1'
-BATCH_STATUS = RUN_ROOT/'_all15_four_surrogates_five_seeds_v1_status.json'
-OUT_PREFIX = 'agentic_without_unique_database_all15_four_surrogates_five_seeds_v1_'
+RUN_ROOT = MAHPE_ROOT/'runs'/'reproduction_all14_four_surrogates_five_seeds_v1'
+BATCH_STATUS = RUN_ROOT/'_all14_four_surrogates_five_seeds_v1_status.json'
+OUT_PREFIX = 'agentic_without_unique_database_all14_four_surrogates_five_seeds_v1_'
 SURROGATES = ('extra_trees', 'bayesian_ridge', 'ard', 'aliegnn_online')
 MODEL_NAME = 'TensorNet-MatPES-PBE-2025.2'
 SEEDS = tuple(range(5))
@@ -109,21 +120,31 @@ JUMP_SIZES = (2, 3, 4)
 JUMP_QUOTA = 4
 JUMP_INTERVAL = 5
 ACQUISITIONS = ('lcb', 'greedy', 'uncertainty', 'novelty')
+# Fourteen publication systems. NaSbSe2 is intentionally omitted.
 SYSTEMS = [
     'AlReGe','Ba2ScTaO6','CoPt','Cu3Au','Cu3Au_123','FeCo','FeCo_331',
-    'FePt','InCuTe2','LiYS2','NaSbSe2','Ni2SbTe2','ThMn2Co3','TiCuNi','V2ZnO4',
+    'FePt','InCuTe2','LiYS2','Ni2SbTe2','ThMn2Co3','TiCuNi','V2ZnO4',
 ]
-assert len(SYSTEMS) == 15
+N_ARMS = len(SYSTEMS) * len(SEEDS) * len(SURROGATES)  # 14 x 5 x 4 = 280
+assert len(SYSTEMS) == 14
+assert N_ARMS == 280
 
 def arm_order(system_index, seed):
     rotation = (system_index + seed) % len(SURROGATES)
     return tuple(SURROGATES[(index + rotation) % len(SURROGATES)]
                  for index in range(len(SURROGATES)))
 
-CAMPAIGN_LOCK = RUN_ROOT/'.all15_four_surrogates_five_seeds_v1.lock'
+CAMPAIGN_LOCK = RUN_ROOT/'.all14_four_surrogates_five_seeds_v1.lock'
 
 
 def geometry(template_sites):
+    """Distance shells and triangle types on the swap sublattice.
+
+    Pair shells are unique mic distances (1e-3 Å tolerance). Each unordered
+    triplet is labeled by the sorted shell indices of its three edges. The
+    returned multiplicities normalize the cluster correlations to the range
+    expected by the linear surrogates.
+    """
     distances = template_sites.get_all_distances(mic=True)
     shells = []
     for value in sorted(float(distances[i, j]) for i in range(len(distances))
@@ -255,6 +276,13 @@ def write_batch(records):
 
 
 def run_system(system, surrogate, seed):
+    """Run one fresh arm: one system, one surrogate, one seed.
+
+    The initial occupancy depends on the seed and the system's composition,
+    not on the surrogate, so the four agents that share a seed start from
+    the same step-0 structure. Selection after that uses only this arm's
+    observations.
+    """
     if surrogate not in SURROGATES:
         raise ValueError(f'unsupported surrogate {surrogate}; choose from {SURROGATES}')
     assert_frozen_sources_unchanged()
@@ -298,7 +326,7 @@ def run_system(system, surrogate, seed):
     calc_manifest = calculator_manifest(relax)
     relax['calc_name'] = MODEL_NAME
     expected_provenance = {
-        'backend': f'hermes-local-online-strict-isolation-all15-{surrogate}',
+        'backend': f'hermes-local-online-strict-isolation-all14-{surrogate}',
         'surrogate_family': ({
             'extra_trees': 'ExtraTrees ensemble on CE-inspired cluster correlations',
             'bayesian_ridge': 'Bayesian ridge on CE-inspired cluster correlations',
@@ -378,7 +406,7 @@ def run_system(system, surrogate, seed):
     (out/'agentic_policy_v2.py').write_bytes(FROZEN_SOURCE_BYTES['base_policy_sha256'])
     (out/'agentic_policy_ce.py').write_bytes(FROZEN_SOURCE_BYTES['ce_policy_sha256'])
     (out/'agentic_policy_aliegnn_online.py').write_bytes(FROZEN_SOURCE_BYTES['aliegnn_policy_sha256'])
-    (out/'run_all15_four_surrogates_five_seeds_frozen_v1.py').write_bytes(
+    (out/'run_all14_four_surrogates_five_seeds_frozen_v1.py').write_bytes(
         FROZEN_SOURCE_BYTES['runner_sha256'])
     (out/'utils.py').write_bytes(FROZEN_SOURCE_BYTES['utils_sha256'])
     assert_frozen_sources_unchanged(); assert_paths_unchanged(expected_input_paths)
@@ -686,13 +714,13 @@ def preflight_campaign():
     assert_frozen_sources_unchanged()
     if CAMPAIGN_LOCK.exists() or BATCH_STATUS.exists():
         raise RuntimeError('existing campaign lock or status: archive it before a fresh run')
-    expected = json.loads((PUDA_ROOT/'reproducibility/all15_cif_sha256.json').read_text())
+    expected = json.loads((PUDA_ROOT/'reproducibility/all14_cif_sha256.json').read_text())
     if set(expected) != set(SYSTEMS):
         raise RuntimeError('input digest manifest differs from the frozen system list')
     arm_paths = [RUN_ROOT/system/f'{OUT_PREFIX}{surrogate}_seed{seed}'
                  for system in SYSTEMS for seed in SEEDS for surrogate in SURROGATES]
-    if len(arm_paths) != 300 or len(set(arm_paths)) != 300:
-        raise RuntimeError('campaign does not define 300 distinct output paths')
+    if len(arm_paths) != N_ARMS or len(set(arm_paths)) != N_ARMS:
+        raise RuntimeError(f'campaign does not define {N_ARMS} distinct output paths')
     collisions = [str(path) for path in arm_paths if path.exists()]
     if collisions:
         raise RuntimeError(f'existing arm outputs must be archived before launch: {collisions[:8]}')
@@ -732,7 +760,7 @@ def preflight_campaign():
             raise RuntimeError(f'{system}: invalid descriptor dimensions or values')
         FixedLineGraphGeometry.from_atoms(sites, cutoff=8.0, max_neighbors=12)
     assert_frozen_sources_unchanged()
-    print('PREFLIGHT PASS: 15 hashed inputs, graph/jump bounds, 300 absent outputs; no evaluator started', flush=True)
+    print(f'PREFLIGHT PASS: {len(SYSTEMS)} hashed inputs, graph/jump bounds, {N_ARMS} absent outputs; no evaluator started', flush=True)
 
 
 def main():
@@ -762,10 +790,10 @@ def main():
                         raise
                     write_batch(records)
         failures = [row for row in records if row['status'] != 'complete']
-        if len(records) != 300 or failures:
+        if len(records) != N_ARMS or failures:
             raise RuntimeError(
                 f'benchmark campaign finished incomplete: arms={len(records)} failures={failures}')
-        print('ALL15 FOUR-SURROGATE FIVE-SEED CAMPAIGN COMPLETE', flush=True)
+        print('ALL14 FOUR-SURROGATE FIVE-SEED CAMPAIGN COMPLETE', flush=True)
     except Exception:
         # Retain the lock after any failure so restart requires deliberate inspection/archive.
         raise

@@ -18,6 +18,14 @@ Fingerprint = tuple[str, ...]
 
 @dataclass(frozen=True)
 class Candidate:
+    """One unseen occupancy the surrogate may choose to relax next.
+
+    ``swaps`` are the site pairs that turn ``parent_fingerprint`` into
+    ``occupancy``. ``num_swaps`` is 1 for a single exchange and 2--4 for a
+    coordinated jump. ``pair_distance`` is the mic distance of a single swap;
+    jumps leave it unset.
+    """
+
     occupancy: list[str]
     swaps: list[list[int]]
     num_swaps: int
@@ -27,6 +35,14 @@ class Candidate:
 
 @dataclass(frozen=True)
 class Elite:
+    """A low-energy occupancy kept as a parent for later jumps.
+
+    Elites are drawn only from the current run. A new elite is kept only when
+    its Hamming distance from every elite already stored is at least
+    ``min_hamming``, so the archive covers separated basins rather than
+    near-duplicate arrangements.
+    """
+
     occupancy: list[str]
     energy: float
     history_index: int
@@ -46,6 +62,7 @@ class Selection:
 
 
 def hamming_distance(left: Sequence[str], right: Sequence[str]) -> int:
+    """Number of sites whose species differ. Composition-preserving swaps change this by 2, 4, ..."""
     if len(left) != len(right):
         raise ValueError("occupancies must have the same length")
     return sum(a != b for a, b in zip(left, right))
@@ -145,6 +162,12 @@ def jump_space_exhausted(parent: Sequence[str], seen: set[Fingerprint], k: int) 
 
 def single_neighbors_from_parent(parent: Sequence[str], seen: set[Fingerprint],
                                  distances: np.ndarray) -> list[Candidate]:
+    """Every unseen exchange of two sites that currently hold different species.
+
+    Same-species pairs are skipped because they do not change the occupancy.
+    ``distances[i, j]`` is stored on the candidate so later acquisition can
+    prefer short or long pairs; it is not itself an energy.
+    """
     parent = list(parent)
     result: list[Candidate] = []
     parent_fp = tuple(parent)
@@ -211,6 +234,14 @@ def select_candidate_v2(candidates: Sequence[Candidate], history_occ: Sequence[S
                         history_energy: Sequence[float],
                         feature_fn: Callable[[Sequence[str]], np.ndarray], seed: int,
                         acquisition_mode: str = "lcb") -> Selection:
+    """Pick the next occupancy with an ExtraTrees model fit on this run only.
+
+    With fewer than eight observations, or when ``acquisition_mode`` is
+    ``novelty``, the farthest candidate in feature space is returned and no
+    tree model is fit. Otherwise the model predicts a mean and a
+    tree-disagreement standard deviation, and ``tree_acquisition_scores``
+    ranks greedy, uncertainty, or hybrid LCB-plus-novelty.
+    """
     if not candidates:
         raise ValueError("candidate list is empty")
     xc, xh = _scaled_features(candidates, history_occ, feature_fn)

@@ -1,13 +1,14 @@
 # Copy to config.toml before using the legacy optimizer entry points.
-# The 15 publication systems have their own enum_configs/*.toml.
-cif_path = "cif_files/NaSbSe2_mp-1220879_icsd645014.cif"
+# The 14 publication systems have their own files in enum_configs/.
+# FePt is one of those systems. NaSbSe2 is not included.
+cif_path = "cif_files/FePt_mp-2260_icsd103600.cif"
 
 [prep_params]
 auto_prepare = true
 max_cell_size = 20
 sublattice_index = 0
 occupancy_tolerance = 2.0
-supercell_size = [1, 2, 2]
+supercell_size = [1, 1, 5]
 
 [relax_params]
 calc_name = "TensorNet-MatPES-PBE-2025.2"

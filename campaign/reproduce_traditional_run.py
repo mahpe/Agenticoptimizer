@@ -14,11 +14,21 @@ import subprocess
 import sys
 import tomllib
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / 'enum_configs'
-METHOD_SCRIPT = {'random': 'agentic_optimizer.py', 'mc': 'Metropolis_MC.py', 'ga': 'genetic_algo_optimizer.py'}
+METHOD_SCRIPT = {
+    'random': 'methods/agentic_optimizer.py',
+    'mc': 'methods/Metropolis_MC.py',
+    'ga': 'methods/genetic_algo_optimizer.py',
+}
 
 def command(system: str, method: str, seed: int, out: Path) -> list[str]:
+    """Build the historical entry-point command for one system, method, and seed.
+
+    The CIF bytes are checked against ``reproducibility/all14_cif_sha256.json``
+    before the command is returned. This function does not create ``out`` and
+    does not start a relaxation.
+    """
     config = CONFIG_ROOT / f'{system}.toml'
     if not config.is_file() or system not in {p.stem for p in CONFIG_ROOT.glob('*.toml')}:
         raise ValueError(f'unknown system: {system}')
@@ -28,7 +38,7 @@ def command(system: str, method: str, seed: int, out: Path) -> list[str]:
         source = ROOT / source
     if not source.is_file():
         raise FileNotFoundError(source)
-    expected = ROOT / 'reproducibility' / 'all15_cif_sha256.json'
+    expected = ROOT / 'reproducibility' / 'all14_cif_sha256.json'
     hashes = json.loads(expected.read_text())
     if hashlib.sha256(source.read_bytes()).hexdigest() != hashes[system]:
         raise ValueError(f'historical CIF digest mismatch: {system}')

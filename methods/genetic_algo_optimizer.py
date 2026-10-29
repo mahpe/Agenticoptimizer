@@ -111,6 +111,17 @@ def export_ga_db_to_atom_swaps_xyz(
 
 
 def run_ga(cfg: dict, args: argparse.Namespace) -> None:
+    """Fixed-composition genetic search.
+
+    The population lives on the swap sublattice only. ASE-GA crossover and
+    permutation operators propose children; each new child is relaxed with
+    MatCalc and scored by total energy. The framework (everything that is not
+    a swap site) is held fixed and reattached when structures are written out.
+
+    ``num_gens`` offspring generations of ``pop_size`` are attempted after the
+    initial population. Duplicate or invalid children are skipped, so the
+    number of relaxations can be below ``pop_size * (num_gens + 1)``.
+    """
     relax = cfg.get("relax_params", {})
     ga_cfg = cfg.get("ga_params", {})
 
@@ -241,6 +252,7 @@ def run_ga(cfg: dict, args: argparse.Namespace) -> None:
     while db.get_number_of_unrelaxed_candidates() > 0:
         candidate = db.get_an_unrelaxed_candidate()
         e_total = get_total_energy(candidate)
+        # ASE-GA maximizes raw score, so store the negative of the total energy.
         set_raw_score(candidate, -e_total)
         candidate.info.setdefault("key_value_pairs", {})
         candidate.info["key_value_pairs"]["E_tot"] = e_total

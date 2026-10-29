@@ -38,9 +38,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
-ROOT = Path(__file__).resolve().parent
+# This file lives in methods/. ROOT is the repository root so config.toml,
+# Skill.md, cif_files/, and enum_configs/ stay where the campaign expects them.
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config.toml"
-DEFAULT_CIF = ROOT / "NaFePO4_olivine_new.cif"
+DEFAULT_CIF = ROOT / "cif_files" / "NaFePO4_olivine_new.cif"
 
 CELL_FILTERS = {
     "CellFilter": CellFilter,
@@ -346,12 +348,14 @@ def apply_swaps(occupancy: list[str], swaps: list[list[int]]) -> list[str]:
 
 
 def apply_swap(occupancy: list[str], i: int, j: int) -> list[str]:
+    """Return a copy of ``occupancy`` with the species on sites ``i`` and ``j`` exchanged."""
     occ = occupancy.copy()
     occ[i], occ[j] = occ[j], occ[i]
     return occ
 
 
 def occupancy_counts(occupancy: list[str]) -> dict[str, int]:
+    """Count how many sites hold each species. Used to check that a move kept the composition."""
     counts: dict[str, int] = {}
     for sym in occupancy:
         counts[sym] = counts.get(sym, 0) + 1

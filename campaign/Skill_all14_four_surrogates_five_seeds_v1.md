@@ -1,14 +1,14 @@
-# Skill: all-15 four-surrogate five-seed campaign v1
+# Skill: all-14 four-surrogate five-seed campaign v1
 
 ## Scientific contract
 
-Run 300 fresh arms: 15 independently configured disordered systems × four online surrogate agents × five independent seeds (0--4). The four agents are ExtraTrees, Bayesian ridge, sparse ARD, and the compact fixed-topology ALIEGNN-inspired energy ensemble.
+Run 280 fresh arms: 14 independently configured disordered systems × four online surrogate agents × five independent seeds (0--4). The four agents are ExtraTrees, Bayesian ridge, sparse ARD, and the compact fixed-topology ALIEGNN-inspired energy ensemble. NaSbSe2 is not in this campaign.
 
 Every arm starts from a fresh seed-local initial occupancy, optimizer, history, elite archive, surrogate/model state, output directory, and calculator instance. The same system and seed must produce the same initial occupancy across all four agents. No completed arm may be reused from an earlier campaign.
 
 ## Systems
 
-`AlReGe`, `Ba2ScTaO6`, `CoPt`, `Cu3Au`, `Cu3Au_123`, `FeCo`, `FeCo_331`, `FePt`, `InCuTe2`, `LiYS2`, `NaSbSe2`, `Ni2SbTe2`, `ThMn2Co3`, `TiCuNi`, and `V2ZnO4`.
+`AlReGe`, `Ba2ScTaO6`, `CoPt`, `Cu3Au`, `Cu3Au_123`, `FeCo`, `FeCo_331`, `FePt`, `InCuTe2`, `LiYS2`, `Ni2SbTe2`, `ThMn2Co3`, `TiCuNi`, and `V2ZnO4`.
 
 The optimizer must not hard-code any formula, site count, element identity, framework composition, or active-species count. For each system, derive the active sites, exact two-species integer composition, fixed framework, supercell, geometry, descriptor, and graph from that system's captured current config/CIF. Reject a non-binary active occupancy or unsupported resource size before calculator setup.
 
@@ -24,7 +24,7 @@ During selection, an arm may access only:
 - captured current config and CIF bytes for its own system;
 - observations generated in that arm.
 
-Runtime access to enumeration/reference databases, earlier trajectories, other systems or arms, known structures, motifs, fitted models, or precomputed energies is forbidden. Post-run reference comparison is permitted only after all 300 arms have finalized and passed integrity checks.
+Runtime access to enumeration/reference databases, earlier trajectories, other systems or arms, known structures, motifs, fitted models, or precomputed energies is forbidden. Post-run reference comparison is permitted only after all 280 arms have finalized and passed integrity checks.
 
 ## Shared search policy
 
@@ -66,15 +66,15 @@ Within every system and seed, rotate the four surrogate order by `(system_index 
 
 ## Resource limits
 
-Reject jump spaces above the supported exact finite bound before calculator setup. ALIEGNN candidate batches are capped at 3000, history at 201, graph nodes at 256, neighbor parameter at 64, and prospective line-graph edges at one million. ExtraTrees uses four workers. Launch only through `launch_all15_four_surrogates_five_seeds_v1.sh`, which creates a dedicated user systemd unit with `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`. These limits retain headroom beyond the observed TensorNet-plus-surrogate task count while bounding the multi-day campaign independently from the chat gateway.
+Reject jump spaces above the supported exact finite bound before calculator setup. ALIEGNN candidate batches are capped at 3000, history at 201, graph nodes at 256, neighbor parameter at 64, and prospective line-graph edges at one million. ExtraTrees uses four workers. Launch only through `campaign/launch_all14_four_surrogates_five_seeds_v1.sh`, which creates a dedicated user systemd unit with `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`. These limits retain headroom beyond the observed TensorNet-plus-surrogate task count while bounding the multi-day campaign independently from the chat gateway.
 
 ## Required preflight
 
 Before launch:
 
-1. Resolve all 15 configs from captured current inputs.
+1. Resolve all 14 configs from captured current inputs.
 2. Verify binary active species, exact integer counts, composition preservation, graph/resource bounds, and descriptor dimensions.
-3. Verify all 300 output directories are absent and the campaign lock is absent.
+3. Verify all 280 output directories are absent and the campaign lock is absent.
 4. Run focused unit and contract tests.
 5. Run mocked end-to-end arms across all four selection branches and across representative site counts/compositions.
 6. Obtain an independent read-only GO audit bound to exact hashes.

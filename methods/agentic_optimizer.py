@@ -47,26 +47,35 @@ DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 
-## StepRecord and OptimizerState classes
-# StepRecord: a single step of the optimization
 @dataclass
 class StepRecord:
+    """One accepted or evaluated proposal: energy, occupancy, and the swaps that produced it."""
+
     step: int
     energy: float
     occupancy: list[str]
-    swaps: list[list[int]]
-    rationale: str = ""
+    swaps: list[list[int]]  # each inner list is a pair of site indices
+    rationale: str = ""  # short agent explanation; empty for the random backend
 
-# OptimizerState: the state of the optimization
+
 @dataclass
 class OptimizerState:
+    """Walker used by the live agent and the random-swap baseline.
+
+    ``seen`` stores occupancy strings that have already been relaxed, so a
+    repeated arrangement is rejected instead of spending another MatCalc call.
+    ``last_rejects`` is fed back into the next prompt so the agent does not
+    immediately repeat a move the runtime refused.
+    """
+
     occupancy: list[str]
     energy: float
     history: list[StepRecord] = field(default_factory=list)
-    seen: set[str] = field(default_factory=set)  # occupancy strings already relaxed
+    seen: set[str] = field(default_factory=set)
     last_rejects: list[str] = field(default_factory=list)
 
     def occupancy_key(self, occupancy: list[str] | None = None) -> str:
+        """Join site symbols in lattice order. Two keys match only when every site matches."""
         return "".join(occupancy if occupancy is not None else self.occupancy)
 
 
@@ -401,6 +410,14 @@ Reply with JSON only.
 
 
 def run_agent(cfg: dict, args: argparse.Namespace) -> OptimizerState:
+    """Random-swap baseline or live Skill.md agent, selected by ``--agent``.
+
+    Both backends share the same relaxation, fixed composition, and duplicate
+    rejection. ``random`` draws unlike-site swaps locally. ``openai`` and
+    ``cursor`` ask a model for the next swaps and parse a single JSON object.
+    The search stops at ``max_iters`` proposals after the initial structure,
+    or earlier if the agent returns ``done: true``.
+    """
     relax = cfg.get("relax_params", {})
     agent_cfg = cfg.get("agent_params", {})
 

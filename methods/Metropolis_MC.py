@@ -1,9 +1,16 @@
 """
 Metropolis Monte Carlo site-occupancy optimizer.
 
-Fixed-composition swaps on lattice sites with MatCalc relaxation. Uphill moves
-are accepted with a fixed probability (acceptance_rate); improving moves always
-accept.
+Search space: which species sit on the lattice sites of a fixed framework
+(e.g. Na vs vacancy on an olivine host). Composition is held fixed: every
+proposal exchanges two sites that currently hold different species, so the
+counts never change.
+
+Each new arrangement is relaxed with MatCalc and scored by total energy.
+Downhill moves (delta_E <= 0) are always accepted. Uphill moves are accepted
+with a constant probability ``acceptance_rate``, not a temperature-dependent
+Boltzmann factor. The best energy seen so far is tracked separately from the
+current walker, so a rejected or uphill move does not overwrite the optimum.
 """
 
 from __future__ import annotations
@@ -41,27 +48,37 @@ from utils import (
 
 @dataclass
 class MCStepRecord:
+    """One row of the trajectory written to summary.json."""
+
     step: int
-    energy: float
-    occupancy: list[str]
-    swap: list[int]
-    delta_e: float
+    energy: float  # walker energy after this step (unchanged on reject)
+    occupancy: list[str]  # walker occupancy after this step
+    swap: list[int]  # site indices exchanged; empty for the initial step
+    delta_e: float  # proposed_energy - current_energy; 0 if the proposal was skipped
     accepted: bool
-    acceptance_prob: float
+    acceptance_prob: float  # 1 for downhill, acceptance_rate for uphill, 0 if skipped
 
 
 @dataclass
 class MCState:
+    """Current walker plus the configurations already sent to relaxation."""
+
     occupancy: list[str]
     energy: float
     history: list[MCStepRecord] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)  # configs already evaluated
 
     def occupancy_key(self, occupancy: list[str] | None = None) -> str:
+        """Canonical string key. Order is site order, so permutations compare equal only if identical."""
         return "".join(occupancy if occupancy is not None else self.occupancy)
 
 
 def propose_swap(occupancy: list[str], rng: np.random.Generator) -> tuple[int, int]:
+    """Pick two sites that hold different species, uniformly among such pairs.
+
+    Swapping like sites would leave the arrangement unchanged and waste a
+    relaxation, so those pairs are excluded.
+    """
     pairs = unlike_site_pairs(occupancy)
     if not pairs:
         raise RuntimeError("No unlike-site pairs available for swapping.")
@@ -72,14 +89,20 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
     relax = cfg.get("relax_params", {})
     mc_cfg = cfg.get("mc_params", {})
 
+    # Host structure plus which symbols may occupy the lattice sites.
+    # CLI flags override the matching keys in [mc_params].
     opt_in = resolve_optimization_input(cfg)
     reference = opt_in.reference
     lattice_element = opt_in.lattice_element
     species = opt_in.atom_swaps
     ratio = opt_in.ratio
+    # "X" is a vacancy placeholder. It is stripped before relaxation so the
+    # calculator only sees real atoms.
     vacancy_symbol = next((s for s in species if s == "X"), "X")
 
     num_steps = int(args.num_steps if args.num_steps is not None else mc_cfg.get("num_steps", 100))
+    # Probability of accepting a move that raises the energy. Downhill moves
+    # are accepted regardless of this value.
     acceptance_rate = float(
         args.acceptance_rate
         if args.acceptance_rate is not None
@@ -98,6 +121,8 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
     xyz_writer = SwapStructureWriter(out_dir, species)
 
     print_loading_info(opt_in, cfg)
+    # Lattice sites are the only positions that get swapped. The framework
+    # (everything else, e.g. FePO4) is held fixed and reattached at each step.
     template_sites, framework = split_lattice_and_framework(reference, lattice_element)
     n_sites = len(template_sites)
     counts = resolve_counts(n_sites, species, ratio)
@@ -109,6 +134,7 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
     relax_kwargs["traj_file"] = str(out_dir / "relaxation.xyz")
     optimizer = setup_optimizer(**relax_kwargs)
 
+    # Random starting arrangement at the target composition, then one relaxation.
     occupancy = initial_occupancy(n_sites, species, ratio, rng)
     print(f"Initial occupancy: {''.join(occupancy)}")
     energy, _results, structure = evaluate_occupancy(
@@ -131,6 +157,8 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
         )
     )
 
+    # Best-so-far is independent of the chain: an accepted uphill move
+    # updates ``state`` but leaves ``best_*`` unchanged.
     best_occ = occupancy.copy()
     best_energy = energy
     best_structure = structure
@@ -138,14 +166,15 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
     xyz_writer.write(best_structure, label="best_initial", occupancy=best_occ, energy=best_energy)
 
     n_accepted = 0
-    n_proposed = 0
+    n_proposed = 0  # unique arrangements that were actually relaxed
 
-    # MC loop: propose unlike-site swap → relax → accept/reject (fixed uphill rate).
+    # Propose an unlike-site swap, relax if unseen, then accept or reject.
     for step in range(1, num_steps + 1):
         i, j = propose_swap(state.occupancy, rng)
         new_occ = apply_swap(state.occupancy, i, j)
         key = state.occupancy_key(new_occ)
-        # Skip relax if we already visited this arrangement.
+        # Already scored this arrangement. Log the attempt and stay put
+        # without calling the relaxer again.
         if key in state.seen:
             state.history.append(
                 MCStepRecord(
@@ -165,6 +194,7 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
             new_occ, template_sites, framework, optimizer, vacancy_symbol
         )
         delta_e = new_energy - state.energy
+        # delta_e <= 0 always accepts. Uphill moves accept with acceptance_rate.
         accepted, accept_prob = fixed_rate_accept(delta_e, acceptance_rate, rng)
 
         record = MCStepRecord(
@@ -177,7 +207,9 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
             acceptance_prob=accept_prob,
         )
         state.history.append(record)
-        state.seen.add(key)  # mark proposed config even if rejected
+        # Record the proposal even when it is rejected, so a later step
+        # that lands on the same arrangement skips the relaxation.
+        state.seen.add(key)
 
         if accepted:
             n_accepted += 1
@@ -192,6 +224,7 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
             print(
                 f"Step {step:4d}: ACCEPT  E={new_energy:.8f} eV  dE={delta_e:+.6f}  swap=[{i},{j}]"
             )
+            # Only a new global minimum overwrites best.xyz.
             if new_energy < best_energy:
                 best_energy = new_energy
                 best_occ = new_occ.copy()
@@ -205,12 +238,15 @@ def run_mc(cfg: dict, args: argparse.Namespace) -> MCState:
                 )
                 print("           new best")
         else:
-            # Keep current state; proposal only logged in history.
+            # Chain stays on the previous occupancy; the proposal is only in history.
             print(
                 f"Step {step:4d}: reject  E={state.energy:.8f} eV  dE={delta_e:+.6f}  "
                 f"P_acc={accept_prob:.4f}  swap=[{i},{j}]"
             )
 
+    # acceptance_rate_target is the uphill probability requested by the user.
+    # acceptance_rate is the fraction of unique proposals that were accepted,
+    # which is higher because downhill moves always count as accepted.
     summary = {
         "best_energy_eV": best_energy,
         "best_occupancy": best_occ,

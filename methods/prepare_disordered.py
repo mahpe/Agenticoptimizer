@@ -19,8 +19,6 @@ from utils import (
     write_prepared_outputs,
 )
 
-ROOT = Path(__file__).resolve().parent
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

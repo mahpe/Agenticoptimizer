@@ -7,7 +7,7 @@ import pytest
 from ase import Atoms
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "methods"))
 
 from agentic_policy_aliegnn_online import (  # noqa: E402
     CompactALiEGNN,
@@ -192,6 +192,6 @@ def test_production_defaults_are_bounded_for_online_retraining():
 
 
 def test_module_has_no_filesystem_or_external_data_access():
-    source = (ROOT/'agentic_policy_aliegnn_online.py').read_text()
+    source = (ROOT/'methods'/'agentic_policy_aliegnn_online.py').read_text()
     forbidden = ['open(', 'read_text(', 'read_bytes(', 'torch.load(', 'enumeration', 'reference_energy']
     assert not any(term in source for term in forbidden)

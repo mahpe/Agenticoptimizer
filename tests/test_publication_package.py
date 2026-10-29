@@ -12,12 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SYSTEMS = (
     'AlReGe', 'Ba2ScTaO6', 'CoPt', 'Cu3Au', 'Cu3Au_123',
     'FeCo', 'FeCo_331', 'FePt', 'InCuTe2', 'LiYS2',
-    'NaSbSe2', 'Ni2SbTe2', 'ThMn2Co3', 'TiCuNi', 'V2ZnO4',
+    'Ni2SbTe2', 'ThMn2Co3', 'TiCuNi', 'V2ZnO4',
 )
 
 
 def test_portable_configs_bind_all_historical_cif_bytes():
-    expected = json.loads((ROOT / 'reproducibility/all15_cif_sha256.json').read_text())
+    expected = json.loads((ROOT / 'reproducibility/all14_cif_sha256.json').read_text())
     assert set(expected) == set(SYSTEMS)
     assert {p.stem for p in (ROOT / 'enum_configs').glob('*.toml')} == set(SYSTEMS)
     for system in SYSTEMS:
@@ -37,7 +37,7 @@ def test_baseline_preflight_is_fresh_and_does_not_evaluate(tmp_path, method):
     from reproduce_traditional_run import command
 
     out = tmp_path / 'new-output'
-    argv = command('NaSbSe2', method, 0, out)
+    argv = command('FePt', method, 0, out)
     assert '--config' in argv and str(out) in argv
     assert not out.exists()
     if method == 'mc':
@@ -55,16 +55,16 @@ def test_example_config_requires_no_host_paths():
 def test_campaign_preflight_rejects_any_arm_collision_before_writing(tmp_path, monkeypatch):
     import importlib.util
 
-    runner = ROOT / 'run_all15_four_surrogates_five_seeds_reproduction_v1.py'
+    runner = ROOT / 'campaign' / 'run_all14_four_surrogates_five_seeds_reproduction_v1.py'
     monkeypatch.setenv('HERMES_EXECUTED_RUNNER_SHA256', hashlib.sha256(runner.read_bytes()).hexdigest())
     spec = importlib.util.spec_from_file_location('publication_campaign', runner)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, 'RUN_ROOT', tmp_path / 'campaign')
-    monkeypatch.setattr(module, 'CAMPAIGN_LOCK', module.RUN_ROOT / '.all15_four_surrogates_five_seeds_v1.lock')
-    monkeypatch.setattr(module, 'BATCH_STATUS', module.RUN_ROOT / '_all15_four_surrogates_five_seeds_v1_status.json')
-    # Pick the last arm to ensure this validates the entire 300-arm destination set.
+    monkeypatch.setattr(module, 'CAMPAIGN_LOCK', module.RUN_ROOT / '.all14_four_surrogates_five_seeds_v1.lock')
+    monkeypatch.setattr(module, 'BATCH_STATUS', module.RUN_ROOT / '_all14_four_surrogates_five_seeds_v1_status.json')
+    # Pick the last arm so the check covers the full 280-arm destination set.
     collision = module.RUN_ROOT / module.SYSTEMS[-1] / f'{module.OUT_PREFIX}{module.SURROGATES[-1]}_seed{module.SEEDS[-1]}'
     collision.mkdir(parents=True)
     with pytest.raises(RuntimeError, match='existing arm outputs'):
