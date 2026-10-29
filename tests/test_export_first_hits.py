@@ -107,9 +107,63 @@ def test_rejects_output_inside_run_root_even_through_symlink(tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(run_root, target_is_directory=True)
     destination = alias / "first_hits.csv"
-    with pytest.raises(ValueError, match="run root"):
+    with pytest.raises(ValueError, match="run root|symlink"):
         exporter.write_rows(destination, [], run_roots=(run_root,))
     assert not destination.exists()
+
+
+def test_output_parent_swap_cannot_redirect_csv_into_run_root(tmp_path, monkeypatch):
+    exporter = load_exporter()
+    parent = tmp_path / "safe"
+    parent.mkdir()
+    run_root = tmp_path / "traditional"
+    run_root.mkdir()
+    output = parent / "first_hits.csv"
+    original_open = exporter.os.open
+    swapped = False
+
+    def swap_before_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        candidate = Path(path)
+        if not swapped and (candidate == parent or candidate.parent == parent):
+            swapped = True
+            parent.rename(tmp_path / "moved_safe")
+            parent.symlink_to(run_root, target_is_directory=True)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(exporter.os, "open", swap_before_open)
+    with pytest.raises(ValueError, match="run root|symlink"):
+        exporter.write_rows(output, [], run_roots=(run_root,))
+    assert swapped
+    assert not (run_root / output.name).exists()
+    assert not list(run_root.iterdir())
+
+
+def test_output_parent_swap_after_pin_cannot_redirect_write(tmp_path, monkeypatch):
+    exporter = load_exporter()
+    parent = tmp_path / "safe"
+    parent.mkdir()
+    moved = tmp_path / "moved_safe"
+    run_root = tmp_path / "traditional"
+    run_root.mkdir()
+    output = parent / "first_hits.csv"
+    original_urandom = exporter.os.urandom
+    swapped = False
+
+    def swap_after_validation(count):
+        nonlocal swapped
+        if not swapped:
+            swapped = True
+            parent.rename(moved)
+            parent.symlink_to(run_root, target_is_directory=True)
+        return original_urandom(count)
+
+    monkeypatch.setattr(exporter.os, "urandom", swap_after_validation)
+    exporter.write_rows(output, [], run_roots=(run_root,))
+    assert swapped
+    assert (moved / output.name).exists()
+    assert not (run_root / output.name).exists()
+    assert not list(run_root.iterdir())
 
 
 def test_reported_best_must_match_trajectory_at_archived_energy_scale(tmp_path):

@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import errno
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 from ase.io import read
 
@@ -113,37 +113,44 @@ def build_rows(*, traditional_root: Path, surrogate_root: Path, reference_root: 
 
 
 def write_rows(output: Path, rows: list[dict], *, run_roots: tuple[Path, ...]) -> None:
-    """Create a semicolon CSV atomically, outside run roots, without overwriting."""
+    """Create a semicolon CSV outside run roots, pinned to its validated directory."""
     output = Path(output)
-    resolved_output = output.resolve()
-    for root in run_roots:
-        resolved_root = Path(root).resolve()
-        if resolved_output == resolved_root or resolved_root in resolved_output.parents:
-            raise ValueError(f"output must be outside run root: {root}")
-    if output.exists():
-        raise FileExistsError(output)
-    if not output.parent.is_dir():
-        raise FileNotFoundError(output.parent)
-    with NamedTemporaryFile("w", newline="", encoding="utf-8", dir=output.parent,
-                            prefix=".first_hits_", suffix=".csv", delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
-            writer = csv.DictWriter(handle, fieldnames=FIELDS, delimiter=";")
-            writer.writeheader()
-            writer.writerows(rows)
-        except BaseException:
-            temporary.unlink(missing_ok=True)
-            raise
+    if not run_roots:
+        raise ValueError("at least one run root is required")
     try:
-        # Hard-link creation is atomic and refuses an existing destination, even
-        # if another exporter creates it between the first check and this call.
-        os.link(temporary, output)
+        directory_fd = os.open(output.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError(f"output parent is a symlink or not a directory: {output.parent}") from exc
+        raise
+    try:
+        # Resolve the directory through its open descriptor, not the pathname:
+        # a subsequent rename/symlink swap cannot redirect the writes below.
+        actual_parent = Path(f"/proc/self/fd/{directory_fd}").resolve(strict=True)
+        for root in run_roots:
+            resolved_root = Path(root).resolve()
+            if actual_parent == resolved_root or resolved_root in actual_parent.parents:
+                raise ValueError(f"output must be outside run root: {root}")
+        temporary_name = f".first_hits_{os.urandom(16).hex()}.csv"
+        temporary_fd = os.open(temporary_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                               0o600, dir_fd=directory_fd)
+        try:
+            with os.fdopen(temporary_fd, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=FIELDS, delimiter=";")
+                writer.writeheader()
+                writer.writerows(rows)
+            # Hard-link creation is atomic and refuses an existing destination.
+            os.link(temporary_name, output.name, src_dir_fd=directory_fd,
+                    dst_dir_fd=directory_fd, follow_symlinks=False)
+        finally:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+        read_fd = os.open(output.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+        with os.fdopen(read_fd, "r", newline="", encoding="utf-8") as handle:
+            verified = list(csv.DictReader(handle, delimiter=";"))
+        if len(verified) != len(rows):
+            raise RuntimeError("CSV read-back row count mismatch")
     finally:
-        temporary.unlink(missing_ok=True)
-    with output.open(newline="", encoding="utf-8") as handle:
-        verified = list(csv.DictReader(handle, delimiter=";"))
-    if len(verified) != len(rows):
-        raise RuntimeError("CSV read-back row count mismatch")
+        os.close(directory_fd)
 
 
 def main() -> None:
