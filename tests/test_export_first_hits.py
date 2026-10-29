@@ -100,6 +100,24 @@ def test_export_never_overwrites_existing_csv(tmp_path):
     assert out.read_text() == "important prior result\n"
 
 
+def test_rejects_output_nested_inside_run_root_with_stable_paths(tmp_path):
+    exporter = load_exporter()
+    run_root = tmp_path / "traditional"
+    nested = run_root / "reports"
+    nested.mkdir(parents=True)
+    destination = nested / "first_hits.csv"
+    with pytest.raises(ValueError, match="run root"):
+        exporter.write_rows(destination, [], run_roots=(run_root,))
+    assert not list(nested.iterdir())
+
+
+def test_readme_discloses_concurrent_rename_limit():
+    documentation = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    assert "concurrent directory renames" in documentation
+    assert "not a security boundary" in documentation
+    assert "never writes into a run directory" not in documentation
+
+
 def test_rejects_output_inside_run_root_even_through_symlink(tmp_path):
     exporter = load_exporter()
     run_root = tmp_path / "traditional"

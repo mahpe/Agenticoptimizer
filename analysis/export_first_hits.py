@@ -113,7 +113,7 @@ def build_rows(*, traditional_root: Path, surrogate_root: Path, reference_root: 
 
 
 def write_rows(output: Path, rows: list[dict], *, run_roots: tuple[Path, ...]) -> None:
-    """Create a semicolon CSV outside run roots, pinned to its validated directory."""
+    """Create a semicolon CSV outside run roots under a stable directory hierarchy."""
     output = Path(output)
     if not run_roots:
         raise ValueError("at least one run root is required")
