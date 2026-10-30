@@ -10,12 +10,14 @@ Layout expected by this file:
   <repo>/methods/          policy modules and utils.py
   <repo>/enum_configs/     one TOML per system
   <repo>/cif_files/        CIFs named by those configs
-  <repo>/campaign/         this runner, the launcher, and the campaign Skill
+  <repo>/campaign/         one-arm wrappers and execute_frozen_python.py
+  <repo>/reproducibility/  this runner, the launcher, and the campaign Skill
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
+import argparse
 import hashlib
 import importlib.metadata
 import itertools
@@ -31,7 +33,7 @@ import numpy as np
 import torch
 from ase.io import write
 
-# campaign/ sits one level below the repository root; search code is in methods/.
+# reproducibility/ sits one level below the repository root; search code is in methods/.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PUDA_ROOT = REPO_ROOT
 MAHPE_ROOT = REPO_ROOT
@@ -709,6 +711,48 @@ def run_system(system, surrogate, seed):
     return summary
 
 
+def arm_output_path(system, surrogate, seed):
+    return RUN_ROOT / system / f'{OUT_PREFIX}{surrogate}_seed{seed}'
+
+
+def preflight_system_input(system, expected):
+    """Check one system's CIF digest, binary occupancy, and graph/jump bounds."""
+    config_path = CONFIG_ROOT/f'{system}.toml'
+    cfg = tomllib.loads(config_path.read_text())
+    source_path = Path(cfg['cif_path'])
+    if not source_path.is_absolute():
+        source_path = PUDA_ROOT/source_path
+    source_path = source_path.resolve()
+    if not source_path.is_relative_to(PUDA_ROOT/'cif_files'):
+        raise RuntimeError(f'{system}: CIF must be packaged under cif_files')
+    if hashlib.sha256(source_path.read_bytes()).hexdigest() != expected[system]:
+        raise RuntimeError(f'{system}: input CIF digest differs from frozen manifest')
+    cfg['cif_path'] = str(source_path)
+    opt_in = resolve_optimization_input(cfg)
+    species, ratio = opt_in.atom_swaps, opt_in.ratio
+    if len(species) != 2:
+        raise ValueError(f'{system}: binary occupancy required')
+    sites, _ = split_lattice_and_framework(opt_in.reference, opt_in.lattice_element)
+    counts = resolve_counts(len(sites), species, ratio)
+    prototype = [species[0]]*counts[species[0]] + [species[1]]*counts[species[1]]
+    if len(prototype) != len(sites):
+        raise RuntimeError(f'{system}: active occupancy count mismatch')
+    jump_spaces = {size: jump_space_size(prototype, size) for size in JUMP_SIZES}
+    oversized = {size: count for size, count in jump_spaces.items()
+                 if count > MAX_EXHAUSTIVE_JUMP_SPACE}
+    if oversized:
+        raise ValueError(f'{system}: jump spaces exceed supported bound: {oversized}')
+    (_, shells, pair_shell, triangle_index,
+     pair_multiplicity, triangle_multiplicity) = geometry(sites)
+    minority = min(counts, key=counts.get)
+    features = cluster_correlation_descriptor(
+        prototype, minority, len(shells), pair_shell, triangle_index,
+        pair_multiplicity, triangle_multiplicity)
+    if len(features) != 2 + len(shells) + len(triangle_index) or not np.isfinite(features).all():
+        raise RuntimeError(f'{system}: invalid descriptor dimensions or values')
+    FixedLineGraphGeometry.from_atoms(sites, cutoff=8.0, max_neighbors=12)
+
+
 def preflight_campaign():
     """Validate every configured arm before any campaign output is created."""
     assert_frozen_sources_unchanged()
@@ -717,7 +761,7 @@ def preflight_campaign():
     expected = json.loads((PUDA_ROOT/'reproducibility/all14_cif_sha256.json').read_text())
     if set(expected) != set(SYSTEMS):
         raise RuntimeError('input digest manifest differs from the frozen system list')
-    arm_paths = [RUN_ROOT/system/f'{OUT_PREFIX}{surrogate}_seed{seed}'
+    arm_paths = [arm_output_path(system, surrogate, seed)
                  for system in SYSTEMS for seed in SEEDS for surrogate in SURROGATES]
     if len(arm_paths) != N_ARMS or len(set(arm_paths)) != N_ARMS:
         raise RuntimeError(f'campaign does not define {N_ARMS} distinct output paths')
@@ -725,45 +769,58 @@ def preflight_campaign():
     if collisions:
         raise RuntimeError(f'existing arm outputs must be archived before launch: {collisions[:8]}')
     for system in SYSTEMS:
-        config_path = CONFIG_ROOT/f'{system}.toml'
-        cfg = tomllib.loads(config_path.read_text())
-        source_path = Path(cfg['cif_path'])
-        if not source_path.is_absolute():
-            source_path = PUDA_ROOT/source_path
-        source_path = source_path.resolve()
-        if not source_path.is_relative_to(PUDA_ROOT/'cif_files'):
-            raise RuntimeError(f'{system}: CIF must be packaged under cif_files')
-        if hashlib.sha256(source_path.read_bytes()).hexdigest() != expected[system]:
-            raise RuntimeError(f'{system}: input CIF digest differs from frozen manifest')
-        cfg['cif_path'] = str(source_path)
-        opt_in = resolve_optimization_input(cfg)
-        species, ratio = opt_in.atom_swaps, opt_in.ratio
-        if len(species) != 2:
-            raise ValueError(f'{system}: binary occupancy required')
-        sites, _ = split_lattice_and_framework(opt_in.reference, opt_in.lattice_element)
-        counts = resolve_counts(len(sites), species, ratio)
-        prototype = [species[0]]*counts[species[0]] + [species[1]]*counts[species[1]]
-        if len(prototype) != len(sites):
-            raise RuntimeError(f'{system}: active occupancy count mismatch')
-        jump_spaces = {size: jump_space_size(prototype, size) for size in JUMP_SIZES}
-        oversized = {size: count for size, count in jump_spaces.items()
-                     if count > MAX_EXHAUSTIVE_JUMP_SPACE}
-        if oversized:
-            raise ValueError(f'{system}: jump spaces exceed supported bound: {oversized}')
-        (_, shells, pair_shell, triangle_index,
-         pair_multiplicity, triangle_multiplicity) = geometry(sites)
-        minority = min(counts, key=counts.get)
-        features = cluster_correlation_descriptor(
-            prototype, minority, len(shells), pair_shell, triangle_index,
-            pair_multiplicity, triangle_multiplicity)
-        if len(features) != 2 + len(shells) + len(triangle_index) or not np.isfinite(features).all():
-            raise RuntimeError(f'{system}: invalid descriptor dimensions or values')
-        FixedLineGraphGeometry.from_atoms(sites, cutoff=8.0, max_neighbors=12)
+        preflight_system_input(system, expected)
     assert_frozen_sources_unchanged()
     print(f'PREFLIGHT PASS: {len(SYSTEMS)} hashed inputs, graph/jump bounds, {N_ARMS} absent outputs; no evaluator started', flush=True)
 
 
-def main():
+def preflight_one_arm(system, surrogate, seed):
+    """Validate one surrogate arm without requiring the other 279 paths to be empty."""
+    assert_frozen_sources_unchanged()
+    if system not in SYSTEMS:
+        raise ValueError(f'unknown system: {system}')
+    if surrogate not in SURROGATES:
+        raise ValueError(f'unsupported surrogate {surrogate}; choose from {SURROGATES}')
+    seed = int(seed)
+    if seed not in SEEDS:
+        raise ValueError(f'seed must be one of {SEEDS}, got {seed}')
+    expected = json.loads((PUDA_ROOT/'reproducibility/all14_cif_sha256.json').read_text())
+    preflight_system_input(system, expected)
+    out = arm_output_path(system, surrogate, seed)
+    if out.exists() or out.is_symlink():
+        raise RuntimeError(f'existing arm output must be archived before launch: {out}')
+    assert_frozen_sources_unchanged()
+    print(f'PREFLIGHT PASS: {system} {surrogate} seed={seed}; output {out} absent; no evaluator started',
+          flush=True)
+    return out
+
+
+def run_one_arm(system, surrogate, seed):
+    """Run a single surrogate arm. Does not take the 280-arm campaign lock."""
+    preflight_one_arm(system, surrogate, seed)
+    RUN_ROOT.mkdir(parents=True, exist_ok=True)
+    run_system(system, surrogate, seed)
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Four-surrogate campaign, or one system/method/seed arm.')
+    parser.add_argument('--preflight', action='store_true',
+                        help='Validate inputs and missing outputs; do not start MatCalc')
+    parser.add_argument('--system', choices=SYSTEMS)
+    parser.add_argument('--method', choices=SURROGATES,
+                        help='One surrogate policy; requires --system and --seed')
+    parser.add_argument('--seed', type=int, choices=SEEDS)
+    parser.add_argument('--device', choices=('gpu', 'cpu'), default='gpu',
+                        help='TensorNet device: gpu is cuda:0 (paper default), cpu is host RAM')
+    args = parser.parse_args(argv)
+    arm = (args.system, args.method, args.seed)
+    if any(value is not None for value in arm) and not all(value is not None for value in arm):
+        parser.error('one-arm mode requires --system, --method, and --seed together')
+    return args
+
+
+def run_full_campaign():
     preflight_campaign()
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     CAMPAIGN_LOCK.mkdir(exist_ok=False)
@@ -801,10 +858,25 @@ def main():
         CAMPAIGN_LOCK.rmdir()
 
 
-if __name__ == '__main__':
-    if sys.argv[1:] == ['--preflight']:
+def apply_device(device: str) -> None:
+    """Pin TensorNet before any calculator is constructed."""
+    os.environ['AGENTIC_DEVICE'] = 'cpu' if device == 'cpu' else 'cuda:0'
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    apply_device(args.device)
+    if args.system is not None:
+        if args.preflight:
+            preflight_one_arm(args.system, args.method, args.seed)
+        else:
+            run_one_arm(args.system, args.method, args.seed)
+        return
+    if args.preflight:
         preflight_campaign()
-    elif len(sys.argv) == 1:
-        main()
-    else:
-        raise SystemExit('usage: runner.py [--preflight]')
+        return
+    run_full_campaign()
+
+
+if __name__ == '__main__':
+    main()

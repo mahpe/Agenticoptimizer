@@ -2,7 +2,7 @@
 
 The release branch was prepared from GitHub `main` at `8411aee47026d0110fe3ebcb787919e31e222a83` in a **fresh checkout**. The archives under the historical `Runs` and `Agenticoptimizer_old` directories were read-only inputs; no archived result was rerun or rewritten.
 
-This package then dropped NaSbSe2, leaving 14 systems, and moved the search code into `methods/` and the campaign scripts into `campaign/`. Docstrings and comments were added in that pass. Files edited for those changes are not byte-identical to the archive.
+This package then dropped NaSbSe2, leaving 14 systems, and moved the search code into `methods/`, the one-arm wrappers into `campaign/`, and the 280-arm runner into `reproducibility/`. Docstrings and comments were added in that pass. Files edited for those changes are not byte-identical to the archive.
 
 ## What still matches the archive
 
@@ -13,8 +13,8 @@ This package then dropped NaSbSe2, leaving 14 systems, and moved the search code
 ## What was reorganized
 
 - Search entry points, surrogate policies, `utils.py`, and `prepare_disordered.py` live in `methods/`. `utils.ROOT` is the repository root, one directory above that folder.
-- The campaign runner, launcher, captured-byte executor, traditional-run wrapper, and campaign Skill live in `campaign/`. The runner preflights 14 inputs and 280 output paths. It is not the archived 15-system runner.
-- `campaign/reproduce_traditional_run.py` resolves relative CIF paths against the repository root and checks `all14_cif_sha256.json`.
+- One-arm wrappers and `execute_frozen_python.py` live in `campaign/`. The 280-arm runner, launcher, and campaign Skill live in `reproducibility/`. The runner preflights 14 inputs and 280 output paths. It is not the archived 15-system runner.
+- `campaign/traditional_run.py` resolves relative CIF paths against the repository root and checks `all14_cif_sha256.json`.
 
 The archived outcomes/figures are not included. A new independent GPU run, comparison against the archived result files, final license/citation metadata, and input redistribution review are separate release gates.
 

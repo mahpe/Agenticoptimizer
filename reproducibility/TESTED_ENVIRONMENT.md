@@ -23,8 +23,8 @@ Validation commands after installing the project dependencies into the checkout'
 
 ```bash
 .venv/bin/python -m pytest -q tests
-bash campaign/launch_all14_four_surrogates_five_seeds_v1.sh --preflight
-.venv/bin/python campaign/reproduce_traditional_run.py --system FePt --method mc --seed 0
+bash reproducibility/launch_all14_four_surrogates_five_seeds_v1.sh --preflight
+.venv/bin/python campaign/traditional_run.py --system FePt --method mc --seed 0
 ```
 
 The last command is a dry command print, not a GPU run. The launcher without `--preflight` requires user-systemd and starts resource-contained GPU work; it must only be invoked when that full resource and output commitment is intended.

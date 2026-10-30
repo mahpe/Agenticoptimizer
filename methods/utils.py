@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
@@ -69,6 +70,20 @@ def load_config(path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def resolve_device(device: str | None = None) -> str:
+    """Map ``gpu``/``cuda``/``cuda:0`` to ``cuda:0`` and ``cpu`` to ``cpu``.
+
+    If ``device`` is omitted, ``AGENTIC_DEVICE`` is used, then CUDA.
+    """
+    raw = device if device is not None else os.environ.get("AGENTIC_DEVICE", "cuda:0")
+    key = str(raw).strip().lower()
+    if key in {"gpu", "cuda", "cuda:0"}:
+        return "cuda:0"
+    if key == "cpu":
+        return "cpu"
+    raise ValueError(f"device must be gpu or cpu, got {raw!r}")
+
+
 def setup_optimizer(
     calc_name="TensorNet-MatPES-PBE-2025.2",
     optimizer="BFGS",
@@ -82,13 +97,19 @@ def setup_optimizer(
     fix_atoms=False,
     symprec=1e-3,
     traj_file="relaxation.traj",
+    device=None,
 ):
-    """Setup the MatCalc relaxer for structure optimization."""
+    """Setup the MatCalc relaxer for structure optimization.
+
+    ``device`` is ``gpu`` (TensorNet on ``cuda:0``) or ``cpu``. The paper
+    campaign used GPU. CPU is slower and is not bitwise identical to CUDA.
+    """
     if isinstance(cell_filter, str):
         cell_filter = CELL_FILTERS.get(cell_filter, CellFilter)
 
+    torch_device = resolve_device(device)
     calculator = mtc.load_fp(calc_name)
-    calculator.potential.to("cuda:0")
+    calculator.potential.to(torch_device)
     return mtc.RelaxCalc(
         calculator,
         optimizer=optimizer,

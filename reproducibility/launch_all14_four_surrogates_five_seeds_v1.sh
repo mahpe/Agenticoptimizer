@@ -2,12 +2,12 @@
 # Resource-contained launcher for the 14-system campaign.
 # --preflight checks inputs and output paths and does not start an evaluation.
 set -euo pipefail
-CAMPAIGN="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOT="$(cd -- "$CAMPAIGN/.." && pwd -P)"
+REPRO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd -- "$REPRO/.." && pwd -P)"
 UNIT="agentic-all14-four-surrogates-five-seeds-v1"
 PYTHON="$ROOT/.venv/bin/python"
-RUNNER="$CAMPAIGN/run_all14_four_surrogates_five_seeds_reproduction_v1.py"
-EXECUTOR="$CAMPAIGN/execute_frozen_python.py"
+RUNNER="$REPRO/run_all14_four_surrogates_five_seeds_reproduction_v1.py"
+EXECUTOR="$ROOT/campaign/execute_frozen_python.py"
 LOG="$ROOT/runs/reproduction_all14_four_surrogates_five_seeds_v1.log"
 
 if [[ ! -x "$PYTHON" ]]; then

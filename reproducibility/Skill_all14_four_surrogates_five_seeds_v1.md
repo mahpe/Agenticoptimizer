@@ -66,7 +66,7 @@ Within every system and seed, rotate the four surrogate order by `(system_index 
 
 ## Resource limits
 
-Reject jump spaces above the supported exact finite bound before calculator setup. ALIEGNN candidate batches are capped at 3000, history at 201, graph nodes at 256, neighbor parameter at 64, and prospective line-graph edges at one million. ExtraTrees uses four workers. Launch only through `campaign/launch_all14_four_surrogates_five_seeds_v1.sh`, which creates a dedicated user systemd unit with `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`. These limits retain headroom beyond the observed TensorNet-plus-surrogate task count while bounding the multi-day campaign independently from the chat gateway.
+Reject jump spaces above the supported exact finite bound before calculator setup. ALIEGNN candidate batches are capped at 3000, history at 201, graph nodes at 256, neighbor parameter at 64, and prospective line-graph edges at one million. ExtraTrees uses four workers. Launch the full 280-arm campaign through `reproducibility/launch_all14_four_surrogates_five_seeds_v1.sh`, which creates a dedicated user systemd unit with `MemoryHigh=16G`, `MemoryMax=24G`, `MemorySwapMax=4G`, `TasksMax=128`, `CPUQuota=1600%`, `OOMPolicy=kill`, and `RuntimeMaxSec=7d`. A single isolated arm may instead be started with `campaign/agentic_run.py --system … --method … --seed … --execute-gpu` or `--execute-cpu`; selection remains confined to that arm. The paper campaign used GPU (`cuda:0`). These limits retain headroom beyond the observed TensorNet-plus-surrogate task count while bounding the multi-day campaign independently from the chat gateway.
 
 ## Required preflight
 

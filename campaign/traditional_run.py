@@ -2,7 +2,9 @@
 """Run ONE fresh historical-style random/MC/GA arm, without enumeration DB access.
 
 The archived optimizer entry points remain unchanged; this wrapper merely resolves
-per-system config and refuses output collisions. It never reads previous results.
+per-system config and refuses output collisions. Dry preflight is the default.
+``--execute-gpu`` runs TensorNet on CUDA (``cuda:0``); ``--execute-cpu`` runs it
+on the host CPU. It never reads previous results.
 """
 from __future__ import annotations
 import argparse
@@ -21,6 +23,13 @@ METHOD_SCRIPT = {
     'mc': 'methods/Metropolis_MC.py',
     'ga': 'methods/genetic_algo_optimizer.py',
 }
+
+def execution_env(device: str) -> dict[str, str]:
+    """Copy the process environment and pin TensorNet to GPU or CPU."""
+    env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}
+    env['AGENTIC_DEVICE'] = 'cuda:0' if device == 'gpu' else 'cpu'
+    return env
+
 
 def command(system: str, method: str, seed: int, out: Path) -> list[str]:
     """Build the historical entry-point command for one system, method, and seed.
@@ -53,17 +62,28 @@ def main() -> int:
     parser.add_argument('--method', required=True, choices=tuple(METHOD_SCRIPT))
     parser.add_argument('--seed', type=int, required=True, choices=range(5), metavar='{0,1,2,3,4}')
     parser.add_argument('--output-root', type=Path, default=ROOT / 'runs' / 'reproduction_traditional_v1')
-    parser.add_argument('--execute', action='store_true', help='Without this flag, validate and print the command only')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--execute-gpu', action='store_true',
+                       help='Start the run with TensorNet on CUDA (cuda:0)')
+    group.add_argument('--execute-cpu', action='store_true',
+                       help='Start the run with TensorNet on CPU')
     args = parser.parse_args()
     out = args.output_root.resolve() / args.system / f'{args.method}_seed{args.seed}'
     cmd = command(args.system, args.method, args.seed, out)
     if out.exists() or out.is_symlink():
         raise FileExistsError(f'refusing to overwrite existing output: {out}')
-    print(json.dumps({'mode': 'execute' if args.execute else 'preflight_only', 'command': cmd, 'output': str(out)}, indent=2), flush=True)
-    if not args.execute: return 0
+    if args.execute_gpu:
+        mode, device = 'execute_gpu', 'gpu'
+    elif args.execute_cpu:
+        mode, device = 'execute_cpu', 'cpu'
+    else:
+        mode, device = 'preflight_only', 'gpu'
+    print(json.dumps({'mode': mode, 'device': device, 'command': cmd, 'output': str(out)}, indent=2), flush=True)
+    if mode == 'preflight_only':
+        return 0
     out.parent.mkdir(parents=True, exist_ok=True)
     out.mkdir(exist_ok=False)
-    return subprocess.call(cmd, cwd=ROOT, env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+    return subprocess.call(cmd, cwd=ROOT, env=execution_env(device))
 
 if __name__ == '__main__':
     raise SystemExit(main())
